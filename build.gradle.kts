@@ -22,7 +22,12 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        local("C:/Program Files/Android/Android Studio")
+        val isCi = System.getenv("CI") == "true"
+        if (isCi) {
+            intellijIdeaCommunity("2024.3")
+        } else {
+            local("C:/Program Files/Android/Android Studio")
+        }
         zipSigner()
         testFramework(TestFrameworkType.Platform)
     }
