@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%">
+    <defs>
+        <!-- Background Gradient (Light/Whitish) -->
+        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FFFFFF" />
+            <stop offset="100%" stop-color="#E2E8F0" />
+        </linearGradient>
+        
+        <!-- Border Gradient -->
+        <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0284C7" />
+            <stop offset="100%" stop-color="#16A34A" />
+        </linearGradient>
+
+        <!-- Metal Connector Gradient -->
+        <linearGradient id="metalGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#E2E8F0" />
+            <stop offset="50%" stop-color="#FFFFFF" />
+            <stop offset="100%" stop-color="#CBD5E1" />
+        </linearGradient>
+
+        <!-- Plug Body Gradient (White/Light Gray) -->
+        <linearGradient id="plugBodyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#FFFFFF" />
+            <stop offset="100%" stop-color="#F1F5F9" />
+        </linearGradient>
+    </defs>
+
+    <!-- Rounded Square Background -->
+    <rect width="128" height="128" rx="28" fill="url(#bgGrad)" />
+    
+    <!-- Subtle Border -->
+    <rect x="1.5" y="1.5" width="125" height="125" rx="26.5" fill="none" stroke="url(#glowGrad)" stroke-width="2" opacity="0.3" />
+
+    <!-- Group for Centered Logo -->
+    <g transform="translate(0, 4)">
+        <!-- Antennae (Android Green, dark enough for light bg) -->
+        <path d="M 48,46 L 38,30" stroke="#16A34A" stroke-width="5" stroke-linecap="round" />
+        <path d="M 80,46 L 90,30" stroke="#16A34A" stroke-width="5" stroke-linecap="round" />
+
+        <!-- Metal USB Connector -->
+        <rect x="50" y="24" width="28" height="24" rx="2" fill="url(#metalGrad)" stroke="#94A3B8" stroke-width="1" />
+        
+        <!-- USB Connector Pins/Holes -->
+        <rect x="55" y="30" width="5" height="7" rx="0.5" fill="#475569" />
+        <rect x="68" y="30" width="5" height="7" rx="0.5" fill="#475569" />
+
+        <!-- USB Plug Body -->
+        <rect x="40" y="46" width="48" height="50" rx="8" fill="url(#plugBodyGrad)" stroke="#CBD5E1" stroke-width="2" />
+
+        <!-- Cable at the Bottom -->
+        <path d="M 64,96 V 114" stroke="#64748B" stroke-width="7" stroke-linecap="round" />
+
+        <!-- Wireless Signal / Connection Waves -->
+        <!-- Dot -->
+        <circle cx="64" cy="78" r="3" fill="#16A34A" />
+        <!-- Wave 1 -->
+        <path d="M 58,72 A 8.5,8.5 0 0,1 70,72" fill="none" stroke="#16A34A" stroke-width="2" stroke-linecap="round" />
+        <!-- Wave 2 -->
+        <path d="M 53,67 A 15.5,15.5 0 0,1 75,67" fill="none" stroke="#16A34A" stroke-width="2" stroke-linecap="round" />
+    </g>
+</svg>

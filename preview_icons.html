@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADBConnect Plugin Icon Preview</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0b0f19;
+            color: #f8fafc;
+            margin: 0;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #00b0ff 0%, #3ddc84 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        p {
+            color: #94a3b8;
+            margin-bottom: 40px;
+            font-size: 1rem;
+        }
+        .section-title {
+            font-size: 1.5rem;
+            margin-top: 30px;
+            margin-bottom: 20px;
+            color: #e2e8f0;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 8px;
+            width: 100%;
+            max-width: 500px;
+            text-align: left;
+        }
+        .container {
+            display: flex;
+            gap: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+        .card {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 24px;
+            text-align: center;
+            width: 200px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+        .icon-container {
+            border-radius: 12px;
+            width: 128px;
+            height: 128px;
+            margin: 0 auto 20px auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.4);
+        }
+        /* Light Theme Preview Area */
+        .light-bg {
+            background-color: #f1f5f9;
+        }
+        /* Dark Theme Preview Area */
+        .dark-bg {
+            background-color: #020617;
+        }
+        .icon-container img {
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+        }
+        .icon-container.svg-large img {
+            width: 128px;
+            height: 128px;
+        }
+        .label {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 4px;
+        }
+        .sublabel {
+            color: #64748b;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ADBConnect Plugin Icon Preview</h1>
+    <p>Preview of the newly created light and dark themed icons for the plugin.</p>
+
+    <!-- Light Theme Section -->
+    <div class="section-title">Light Theme (Default / Marketplace)</div>
+    <div class="container">
+        <!-- SVG Vector Icon Card -->
+        <div class="card">
+            <div class="icon-container light-bg svg-large">
+                <img src="src/main/resources/META-INF/pluginIcon.svg" alt="Light SVG Icon">
+            </div>
+            <div class="label">pluginIcon.svg</div>
+            <div class="sublabel">Scalable Vector (Light Background)</div>
+        </div>
+
+        <!-- PNG Fallback Icon Card -->
+        <div class="card">
+            <div class="icon-container light-bg">
+                <img src="src/main/resources/META-INF/pluginIcon.png" alt="Light PNG Icon">
+            </div>
+            <div class="label">pluginIcon.png</div>
+            <div class="sublabel">80x80 Raster (Light Background)</div>
+        </div>
+    </div>
+
+    <!-- Dark Theme Section -->
+    <div class="section-title">Dark Theme (IDE Dark Mode)</div>
+    <div class="container">
+        <!-- SVG Vector Icon Card -->
+        <div class="card">
+            <div class="icon-container dark-bg svg-large">
+                <img src="src/main/resources/META-INF/pluginIcon_dark.svg" alt="Dark SVG Icon">
+            </div>
+            <div class="label">pluginIcon_dark.svg</div>
+            <div class="sublabel">Scalable Vector (Dark Background)</div>
+        </div>
+
+        <!-- PNG Fallback Icon Card -->
+        <div class="card">
+            <div class="icon-container dark-bg">
+                <img src="src/main/resources/META-INF/pluginIcon_dark.png" alt="Dark PNG Icon">
+            </div>
+            <div class="label">pluginIcon_dark.png</div>
+            <div class="sublabel">80x80 Raster (Dark Background)</div>
+        </div>
+    </div>
+
+</body>
+</html>
