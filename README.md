@@ -1,5 +1,9 @@
 # Remote ADB Connector
 
+[![JetBrains Marketplace](https://img.shields.io/jetbrains/plugin/v/32832-remote-adb-connector?style=flat-square&color=blue&logo=jetbrains)](https://plugins.jetbrains.com/plugin/32832-remote-adb-connector)
+[![Downloads](https://img.shields.io/jetbrains/plugin/d/32832-remote-adb-connector?style=flat-square)](https://plugins.jetbrains.com/plugin/32832-remote-adb-connector)
+[![Rating](https://img.shields.io/jetbrains/plugin/r/rating/32832-remote-adb-connector?style=flat-square)](https://plugins.jetbrains.com/plugin/32832-remote-adb-connector)
+
 An IntelliJ Platform plugin for Android Studio that connects Android devices attached to a remote Windows ADB server to your local Linux Android Studio instance — with a single click.
 
 ## Problem
