@@ -1,0 +1,128 @@
+<h2>Remote ADB Connector: Step-by-Step Usage Guide</h2>
+
+<p>This guide describes how to configure and use the <strong>Remote ADB Connector</strong> plugin to connect Android devices physically connected to your Windows laptop to your remote/local Linux Android Studio instance over the network.</p>
+
+<hr />
+
+<h3>📋 Architectural Overview</h3>
+
+<p>Before setting up, it helps to understand the connection topology:</p>
+<pre>
+[Android Device] --(USB)--> [Windows Host (ADB Server)] &lt;--(LAN/Wi-Fi)--&gt; [Linux Client (Android Studio/Plugin)]
+</pre>
+
+<p>By default, the Windows ADB server only accepts connections from the local machine (<code>127.0.0.1</code>). To allow the Linux client to discover and connect to the device, we must expose the Windows ADB server to the network.</p>
+
+<hr />
+
+<h3>🛠️ Step 1: Prepare the Windows Host (Windows Laptop)</h3>
+
+<h4>1. Enable USB Debugging on Your Android Device</h4>
+<ol>
+    <li>On your Android device, go to <strong>Settings</strong> -&gt; <strong>About Phone</strong> and tap <strong>Build Number</strong> 7 times to enable Developer Options.</li>
+    <li>Go to <strong>Settings</strong> -&gt; <strong>System</strong> -&gt; <strong>Developer Options</strong> and enable <strong>USB Debugging</strong>.</li>
+    <li>Connect the phone to the Windows laptop via USB.</li>
+</ol>
+
+<h4>2. Run the ADB Server Exposing It to the Network</h4>
+<p>By default, the ADB server binds to <code>localhost:5037</code>. To bind it to all network interfaces so your Linux machine can connect to it, open <strong>Command Prompt</strong> or <strong>PowerShell</strong> on Windows and run:</p>
+
+<pre><code>:: Kill any existing local ADB server running on Windows
+adb kill-server
+
+:: Start the ADB server listening on all network interfaces
+adb -a nodaemon server</code></pre>
+
+<blockquote>
+    <strong>Important:</strong> The <code>-a</code> flag tells the ADB server to listen on all interfaces (e.g., <code>0.0.0.0</code>), allowing external network connections. Using <code>nodaemon</code> runs the server in the foreground, which shows connection logs in real-time. If you prefer to run it in the background, you can use <code>adb -a server</code>.
+</blockquote>
+
+<p><img src="https://raw.githubusercontent.com/maxandroid24/ADBConnect/main/images/windows_terminal_adb.png" alt="Running ADB commands to expose the server on Windows" width="600" /></p>
+
+<blockquote>
+    <strong>Warning:</strong> <strong>Windows Firewall Prompt:</strong> When you run <code>adb -a nodaemon server</code>, Windows Defender Firewall may prompt you to allow network access. Make sure to check <strong>Private networks</strong> (and Public networks if on a shared Wi-Fi) and click <strong>Allow access</strong>. If the prompt does not appear and connection fails, you may need to add an inbound rule for TCP port <code>5037</code>.
+</blockquote>
+
+<hr />
+
+<h3>🔍 Step 2: Get the Windows Host IP Address</h3>
+
+<p>To connect the plugin to Windows, you need the IP address of your Windows laptop:</p>
+<ol>
+    <li>In PowerShell or Command Prompt, run:
+        <pre><code>ipconfig</code></pre>
+    </li>
+    <li>Look for your active network adapter (e.g., <strong>Wireless LAN adapter Wi-Fi</strong> or <strong>Ethernet adapter</strong>).</li>
+    <li>Copy the <strong>IPv4 Address</strong> (e.g., <code>192.168.1.100</code>).</li>
+</ol>
+
+<hr />
+
+<h3>🧩 Step 3: Install the Plugin in Android Studio (Linux)</h3>
+
+<ol>
+    <li>Open Android Studio on your Linux machine.</li>
+    <li>Open <strong>Settings</strong> (or <strong>Preferences</strong> on older versions) -&gt; <strong>Plugins</strong>.</li>
+    <li>Select the <strong>Marketplace</strong> tab, search for <code>Remote ADB Connector</code>, and click <strong>Install</strong>.</li>
+    <li>Restart Android Studio if prompted.</li>
+</ol>
+
+<hr />
+
+<h3>⚙️ Step 4: Configure and Connect in Android Studio</h3>
+
+<ol>
+    <li>Open your project in Android Studio.</li>
+    <li>Locate the <strong>Remote ADB</strong> tool window on the right-hand sidebar and click to open it.</li>
+    <li>Configure the settings:
+        <ul>
+            <li><strong>Windows Host:</strong> Enter the Windows IPv4 address you copied in Step 2 (e.g., <code>192.168.1.100</code>).</li>
+            <li><strong>ADB Port:</strong> Keep the default <code>5037</code> (the Windows ADB server port).</li>
+            <li><strong>Device TCP Port:</strong> Keep the default <code>5555</code> (this is the port that the phone will use to listen for TCP connections).</li>
+            <li><strong>Polling Interval (s):</strong> Keep <code>5</code> seconds (how frequently the plugin checks device status).</li>
+            <li><strong>Checkboxes:</strong>
+                <ul>
+                    <li><strong>Auto Connect on Startup:</strong> Check this if you want the plugin to automatically connect whenever you open Android Studio.</li>
+                    <li><strong>Auto Detect Devices:</strong> Automatically detects USB-connected devices on the Windows machine.</li>
+                    <li><strong>Auto Reconnect:</strong> Automatically monitors the connection and reconnects if the connection drops.</li>
+                </ul>
+            </li>
+        </ul>
+    </li>
+    <li>Click <strong>Connect</strong>.</li>
+</ol>
+
+<p><img src="https://raw.githubusercontent.com/maxandroid24/ADBConnect/main/images/android_studio_plugin_panel.png" alt="Android Studio Remote ADB Connector Panel UI" width="300" /></p>
+
+<hr />
+
+<h3>🎉 Step 5: How It Works Behind the Scenes</h3>
+
+<p>Once you click <strong>Connect</strong>, the plugin performs the following steps automatically:</p>
+<ol>
+    <li><strong>Verifies Remote Server:</strong> Connects to the remote Windows ADB server on port <code>5037</code>.</li>
+    <li><strong>Discovers USB Devices:</strong> Queries the Windows server for connected USB devices.</li>
+    <li><strong>Switches Device to TCP Mode:</strong> Automatically runs <code>adb -s &lt;device_serial&gt; tcpip 5555</code> on the remote device.</li>
+    <li><strong>Retrieves Device Network IP:</strong> Automatically queries the device's IP address on the Wi-Fi/local network.</li>
+    <li><strong>Establishes Local Connection:</strong> Runs <code>adb connect &lt;device_ip&gt;:5555</code> on your Linux machine, establishing a direct connection.</li>
+    <li><strong>Device Appears in Android Studio:</strong> The device is now listed in Android Studio’s target device dropdown, ready for running or debugging apps.</li>
+</ol>
+
+<hr />
+
+<h3>🛠️ Troubleshooting</h3>
+
+<h4>❌ Error: "Cannot reach ADB server"</h4>
+<ul>
+    <li>Check if <code>adb -a nodaemon server</code> is currently running on your Windows machine.</li>
+    <li>Verify both machines are on the same Wi-Fi or local network.</li>
+    <li>Ping your Windows IP from Linux: <code>ping &lt;windows-ip&gt;</code> to verify basic network connection.</li>
+    <li>Add an inbound firewall rule on Windows for TCP port <code>5037</code>.</li>
+</ul>
+
+<h4>❌ Error: "No devices found"</h4>
+<ul>
+    <li>Ensure your phone is connected to your Windows machine via a USB cable.</li>
+    <li>Verify that running <code>adb devices</code> directly on Windows lists your device. If it shows <code>unauthorized</code>, look at your phone screen and grant USB debugging permissions.</li>
+    <li>Check if the device is connected to the same Wi-Fi network as the laptop. (Wi-Fi is required to establish the network TCP/IP bridge).</li>
+</ul>
