@@ -52,7 +52,7 @@ The installable ZIP will be in `build/distributions/`.
 ## Usage
 
 > [!TIP]
-> For a comprehensive, illustrated step-by-step setup guide with images, please refer to [USAGE.md](file:///d:/Github/ADBConnect/USAGE.md).
+> For a comprehensive, illustrated step-by-step setup guide with images, please refer to [USAGE.md](USAGE.md).
 
 ### Initial Setup
 

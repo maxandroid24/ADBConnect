@@ -10,11 +10,11 @@ Before setting up, it helps to understand the connection topology:
 
 ```mermaid
 graph LR
-    subgraph "Windows Host (Remote)"
-        Device["Android Device"] -- USB -- Windows["Windows PC / adb server"]
+    subgraph WindowsHost["Windows Host (Remote)"]
+        Device["Android Device"] ---|USB| WindowsHostPC["Windows PC (ADB Server)"]
     end
-    subgraph "Linux Client (Local)"
-        AS["Android Studio / Plugin"] -- LAN -- Windows
+    subgraph LinuxClient["Linux Client (Local)"]
+        AS["Android Studio / Plugin"] ---|LAN| WindowsHostPC
     end
     classDef default fill:#1e293b,stroke:#334155,color:#f8fafc;
 ```
@@ -44,7 +44,7 @@ adb -a nodaemon server
 > [!IMPORTANT]
 > The `-a` flag tells the ADB server to listen on all interfaces (e.g., `0.0.0.0`), allowing external network connections. Using `nodaemon` runs the server in the foreground, which shows connection logs in real-time. If you prefer to run it in the background, you can use `adb -a server`.
 
-![Running ADB commands to expose the server on Windows](file:///C:/Users/navne/.gemini/antigravity-ide/brain/efa56b17-3fce-415c-a813-1b0e76fe8445/windows_terminal_adb_1783832416790.png)
+![Running ADB commands to expose the server on Windows](images/windows_terminal_adb.png)
 
 > [!WARNING]
 > **Windows Firewall Prompt:** When you run `adb -a nodaemon server`, Windows Defender Firewall may prompt you to allow network access. Make sure to check **Private networks** (and Public networks if on a shared Wi-Fi) and click **Allow access**. If the prompt does not appear and connection fails, you may need to add an inbound rule for TCP port `5037`.
@@ -87,7 +87,7 @@ To connect the plugin to Windows, you need the IP address of your Windows laptop
      * **Auto Reconnect:** Automatically monitors the connection and reconnects if the connection drops.
 4. Click **Connect**.
 
-![Android Studio Remote ADB Connector Panel UI](file:///C:/Users/navne/.gemini/antigravity-ide/brain/efa56b17-3fce-415c-a813-1b0e76fe8445/android_studio_plugin_panel_1783832430634.png)
+![Android Studio Remote ADB Connector Panel UI](images/android_studio_plugin_panel.png)
 
 ---
 
