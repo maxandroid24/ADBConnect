@@ -51,6 +51,9 @@ The installable ZIP will be in `build/distributions/`.
 
 ## Usage
 
+> [!TIP]
+> For a comprehensive, illustrated step-by-step setup guide with images, please refer to [USAGE.md](file:///d:/Github/ADBConnect/USAGE.md).
+
 ### Initial Setup
 
 1. Open the **Remote ADB** tool window (right sidebar)
@@ -128,10 +131,14 @@ When enabled (default), the plugin automatically detects device disconnections a
 
 ### "Cannot reach ADB server"
 
-- Verify the Windows machine IP is correct
-- Ensure `adb start-server` is running on Windows
-- Check firewall allows connections on port 5037
-- Test connectivity: `adb -H <windows-ip> -P 5037 devices`
+- Verify the Windows machine IP is correct.
+- Ensure the ADB server on Windows is listening on all network interfaces. Run the following on the Windows host:
+  ```cmd
+  adb kill-server
+  adb -a nodaemon server
+  ```
+- Check that the Windows firewall allows incoming connections on port `5037`.
+- Test connectivity from the Linux machine: `adb -H <windows-ip> -P 5037 devices`
 
 ### "No devices found"
 
