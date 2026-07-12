@@ -10,11 +10,11 @@ Before setting up, it helps to understand the connection topology:
 
 ```mermaid
 graph LR
-    subgraph Windows Host (Remote)
-        Device[Android Device] -- USB -- Windows[Windows PC / adb server]
+    subgraph "Windows Host (Remote)"
+        Device["Android Device"] -- USB -- Windows["Windows PC / adb server"]
     end
-    subgraph Linux Client (Local)
-        AS[Android Studio / Plugin] -- LAN -- Windows
+    subgraph "Linux Client (Local)"
+        AS["Android Studio / Plugin"] -- LAN -- Windows
     end
     classDef default fill:#1e293b,stroke:#334155,color:#f8fafc;
 ```
