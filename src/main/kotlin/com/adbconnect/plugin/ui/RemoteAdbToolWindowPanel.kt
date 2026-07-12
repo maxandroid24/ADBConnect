@@ -10,6 +10,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.Disposer
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -71,6 +72,7 @@ class RemoteAdbToolWindowPanel(
     // Buttons
     private val connectButton = JButton("Connect")
     private val disconnectButton = JButton("Disconnect")
+    private val helpButton = JButton("Help")
 
     // Coroutine scope for state observation
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -213,14 +215,16 @@ class RemoteAdbToolWindowPanel(
     }
 
     private fun buildButtonPanel(): JPanel {
-        val panel = JPanel(FlowLayout(FlowLayout.CENTER, 8, 8))
+        val panel = JPanel(FlowLayout(FlowLayout.CENTER, 6, 8))
 
-        connectButton.preferredSize = Dimension(120, 32)
-        disconnectButton.preferredSize = Dimension(120, 32)
+        connectButton.preferredSize = Dimension(90, 32)
+        disconnectButton.preferredSize = Dimension(90, 32)
         disconnectButton.isEnabled = false
+        helpButton.preferredSize = Dimension(70, 32)
 
         panel.add(connectButton)
         panel.add(disconnectButton)
+        panel.add(helpButton)
 
         return panel
     }
@@ -284,6 +288,35 @@ class RemoteAdbToolWindowPanel(
         disconnectButton.addActionListener {
             remoteAdbService.disconnect()
         }
+
+        helpButton.addActionListener {
+            showHelpDialog()
+        }
+    }
+
+    private fun showHelpDialog() {
+        val message = """
+            <html>
+            <body style='width: 300px;'>
+            <h3>Windows Host Configuration</h3>
+            <p>By default, the Windows ADB server only accepts connections from localhost (127.0.0.1).</p>
+            <p>To allow this plugin to connect from Linux, run the following commands in <b>Command Prompt</b> or <b>PowerShell</b> on your Windows machine:</p>
+            <hr/>
+            <pre style='background-color: #2b2b2b; color: #a9b7c6; padding: 6px; font-family: monospace;'>
+adb kill-server
+adb -a nodaemon server</pre>
+            <hr/>
+            <p><b>Firewall:</b> Ensure Windows Firewall allows incoming connections on port <b>5037</b>. If prompted, select "Allow access" for Private networks.</p>
+            </body>
+            </html>
+        """.trimIndent()
+
+        Messages.showMessageDialog(
+            project,
+            message,
+            "Remote ADB Help",
+            Messages.getInformationIcon()
+        )
     }
 
     // ──────────────────────────────────────────────────────────────────────
