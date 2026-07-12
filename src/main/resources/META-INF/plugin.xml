@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.adbconnect.plugin</id>
     <name>Remote ADB Connector</name>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
 
     <vendor email="support@adbconnect.com" url="https://github.com/adbconnect/remote-adb-connector">
         ADBConnect
@@ -31,6 +31,11 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>1.0.3</h3>
+        <ul>
+            <li>Added interactive "Help" button in the tool window showing setup commands for exposing the Windows ADB server</li>
+            <li>Updated documentation with network setup guides and visual mockups</li>
+        </ul>
         <h3>1.0.2</h3>
         <ul>
             <li>Added light and dark themed plugin icons for Marketplace and IDE Plugin Manager</li>
