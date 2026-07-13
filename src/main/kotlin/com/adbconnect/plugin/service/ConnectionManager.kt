@@ -5,6 +5,7 @@ import com.adbconnect.plugin.model.Device
 import com.adbconnect.plugin.model.DeviceState
 import com.adbconnect.plugin.notification.NotificationService
 import com.adbconnect.plugin.settings.PluginSettings
+import com.adbconnect.plugin.settings.PluginSettingsState
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -53,6 +54,13 @@ class ConnectionManager(private val project: Project) {
      */
     fun connect(): Boolean {
         log.info("Starting connection workflow")
+
+        val isUsb = settings.state.connectionType == PluginSettingsState.CONNECTION_TYPE_USB
+        if (isUsb) {
+            log.info("USB mode: running adb disconnect locally and removing any previous port forward on Windows")
+            adbExecutor.executeOnLocal("disconnect")
+            adbExecutor.executeOnWindows("forward", "--remove", "tcp:5036")
+        }
 
         // Step 1: Verify Windows ADB server
         stateMachine.transition(ConnectionState.WaitingForWindowsServer)
@@ -138,6 +146,17 @@ class ConnectionManager(private val project: Project) {
             notifications.notifyDisconnected(device.displayName())
         }
 
+        val isUsb = settings.state.connectionType == PluginSettingsState.CONNECTION_TYPE_USB
+        if (isUsb) {
+            log.info("USB mode: Removing port forward tcp:5036 from Windows server")
+            val result = adbExecutor.executeOnWindows("forward", "--remove", "tcp:5036")
+            if (result.isSuccess) {
+                log.info("Removed port forward tcp:5036 successfully")
+            } else {
+                log.warn("Failed to remove port forward tcp:5036: ${result.stderr}")
+            }
+        }
+
         stateMachine.reset()
     }
 
@@ -200,31 +219,63 @@ class ConnectionManager(private val project: Project) {
      * @return The device with [Device.ip] and [Device.tcpPort] populated, or null on failure.
      */
     internal fun prepareDevice(device: Device): Device? {
-        val tcpPort = settings.state.deviceTcpPort
+        val isUsb = settings.state.connectionType == PluginSettingsState.CONNECTION_TYPE_USB
 
-        // Switch to TCP mode
-        log.info("Switching ${device.serial} to TCP mode on port $tcpPort")
-        val tcpResult = adbExecutor.executeOnWindows(
-            "-s", device.serial, "tcpip", tcpPort.toString()
-        )
+        if (isUsb) {
+            log.info("USB mode: Switching ${device.serial} to TCP mode on port 5037")
+            val tcpResult = adbExecutor.executeOnWindows(
+                "-s", device.serial, "tcpip", "5037"
+            )
 
-        if (tcpResult.isFailure) {
-            log.error("Failed to switch ${device.serial} to TCP mode: ${tcpResult.stderr}")
-            return null
+            if (tcpResult.isFailure) {
+                log.error("Failed to switch ${device.serial} to TCP mode 5037: ${tcpResult.stderr}")
+                return null
+            }
+
+            // Wait 2 seconds for TCP mode to settle
+            Thread.sleep(2000L)
+
+            // Setup port forward on Windows server: adb forward tcp:5036 tcp:5037
+            log.info("USB mode: Setting up port forwarding tcp:5036 -> tcp:5037 for ${device.serial}")
+            val forwardResult = adbExecutor.executeOnWindows(
+                "-s", device.serial, "forward", "tcp:5036", "tcp:5037"
+            )
+
+            if (forwardResult.isFailure) {
+                log.error("Failed to forward tcp:5036 to tcp:5037 for ${device.serial}: ${forwardResult.stderr}")
+                return null
+            }
+
+            val windowsHost = settings.state.windowsHost.orEmpty()
+            log.info("Device ${device.serial} prepared via USB port forwarding: Host=$windowsHost, Port=5036")
+            return device.copy(ip = windowsHost, tcpPort = 5036)
+        } else {
+            val tcpPort = settings.state.deviceTcpPort
+
+            // Switch to TCP mode
+            log.info("Switching ${device.serial} to TCP mode on port $tcpPort")
+            val tcpResult = adbExecutor.executeOnWindows(
+                "-s", device.serial, "tcpip", tcpPort.toString()
+            )
+
+            if (tcpResult.isFailure) {
+                log.error("Failed to switch ${device.serial} to TCP mode: ${tcpResult.stderr}")
+                return null
+            }
+
+            // Wait briefly for TCP mode to take effect
+            Thread.sleep(TCP_MODE_SETTLE_MS)
+
+            // Resolve device IP address
+            val ip = resolveDeviceIp(device.serial)
+            if (ip == null) {
+                log.error("Could not determine IP address for ${device.serial}")
+                return null
+            }
+
+            log.info("Device ${device.serial} prepared: IP=$ip, TCP port=$tcpPort")
+            return device.copy(ip = ip, tcpPort = tcpPort)
         }
-
-        // Wait briefly for TCP mode to take effect
-        Thread.sleep(TCP_MODE_SETTLE_MS)
-
-        // Resolve device IP address
-        val ip = resolveDeviceIp(device.serial)
-        if (ip == null) {
-            log.error("Could not determine IP address for ${device.serial}")
-            return null
-        }
-
-        log.info("Device ${device.serial} prepared: IP=$ip, TCP port=$tcpPort")
-        return device.copy(ip = ip, tcpPort = tcpPort)
     }
 
     /**

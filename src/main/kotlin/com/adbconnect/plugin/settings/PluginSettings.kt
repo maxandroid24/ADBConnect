@@ -34,6 +34,9 @@ class PluginSettings : SimplePersistentStateComponent<PluginSettingsState>(Plugi
  */
 class PluginSettingsState : BaseState() {
 
+    /** Connection type (WiFi or USB). */
+    var connectionType by string(CONNECTION_TYPE_WIFI)
+
     /** IP address or hostname of the Windows machine running the ADB server. */
     var windowsHost by string("")
 
@@ -62,6 +65,8 @@ class PluginSettingsState : BaseState() {
     var commandTimeoutSeconds by property(DEFAULT_COMMAND_TIMEOUT)
 
     companion object {
+        const val CONNECTION_TYPE_WIFI = "WiFi"
+        const val CONNECTION_TYPE_USB = "USB"
         const val DEFAULT_ADB_PORT = 5037
         const val DEFAULT_DEVICE_TCP_PORT = 5555
         const val DEFAULT_POLLING_INTERVAL = 5

@@ -53,6 +53,10 @@ class RemoteAdbToolWindowPanel(
 
     // Settings
     private val hostField = JTextField(20)
+    private val connectionTypeCombo = JComboBox(arrayOf(
+        PluginSettingsState.CONNECTION_TYPE_WIFI,
+        PluginSettingsState.CONNECTION_TYPE_USB
+    ))
     private val adbPortSpinner = JSpinner(SpinnerNumberModel(5037, 1, 65535, 1))
     private val deviceTcpPortSpinner = JSpinner(SpinnerNumberModel(5555, 1, 65535, 1))
     private val pollingSpinner = JSpinner(SpinnerNumberModel(5, 1, 300, 1))
@@ -154,11 +158,16 @@ class RemoteAdbToolWindowPanel(
             BorderFactory.createTitledBorder("Settings"),
             JBUI.Borders.empty(4)
         )
-        panel.maximumSize = Dimension(Int.MAX_VALUE, 260)
+        panel.maximumSize = Dimension(Int.MAX_VALUE, 295)
 
         // Windows Host
         val hostRow = createFormRow("Windows Host:", hostField)
         panel.add(hostRow)
+        panel.add(Box.createVerticalStrut(4))
+
+        // Connection Type
+        val typeRow = createFormRow("Connection Type:", connectionTypeCombo)
+        panel.add(typeRow)
         panel.add(Box.createVerticalStrut(4))
 
         // ADB Port
@@ -311,17 +320,23 @@ class RemoteAdbToolWindowPanel(
     private fun loadSettings() {
         val state = settings.state
         hostField.text = state.windowsHost ?: ""
+        connectionTypeCombo.selectedItem = state.connectionType ?: PluginSettingsState.CONNECTION_TYPE_WIFI
         adbPortSpinner.value = state.adbPort
         deviceTcpPortSpinner.value = state.deviceTcpPort
         pollingSpinner.value = state.pollingIntervalSeconds
         autoConnectCheckbox.isSelected = state.autoConnect
         autoDetectCheckbox.isSelected = state.autoDetectDevices
         autoReconnectCheckbox.isSelected = state.autoReconnect
+
+        // Initial enablement of TCP port spinner
+        val isUsb = state.connectionType == PluginSettingsState.CONNECTION_TYPE_USB
+        deviceTcpPortSpinner.isEnabled = !isUsb
     }
 
     private fun saveSettings() {
         val state = settings.state
         state.windowsHost = hostField.text.trim()
+        state.connectionType = connectionTypeCombo.selectedItem as String
         state.adbPort = adbPortSpinner.value as Int
         state.deviceTcpPort = deviceTcpPortSpinner.value as Int
         state.pollingIntervalSeconds = pollingSpinner.value as Int
@@ -335,6 +350,11 @@ class RemoteAdbToolWindowPanel(
     // ──────────────────────────────────────────────────────────────────────
 
     private fun bindActions() {
+        connectionTypeCombo.addActionListener {
+            val isUsb = connectionTypeCombo.selectedItem == PluginSettingsState.CONNECTION_TYPE_USB
+            deviceTcpPortSpinner.isEnabled = !isUsb
+        }
+
         connectButton.addActionListener {
             saveSettings()
             val error = remoteAdbService.connect()
@@ -443,8 +463,9 @@ adb -a nodaemon server</pre>
             // Disable settings editing while connected
             val settingsEnabled = isIdle
             hostField.isEnabled = settingsEnabled
+            connectionTypeCombo.isEnabled = settingsEnabled
             adbPortSpinner.isEnabled = settingsEnabled
-            deviceTcpPortSpinner.isEnabled = settingsEnabled
+            deviceTcpPortSpinner.isEnabled = settingsEnabled && (connectionTypeCombo.selectedItem != PluginSettingsState.CONNECTION_TYPE_USB)
             pollingSpinner.isEnabled = settingsEnabled
 
             // Force layout update and repaint
