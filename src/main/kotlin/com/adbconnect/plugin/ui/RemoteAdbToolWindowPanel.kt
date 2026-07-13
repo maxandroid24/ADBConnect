@@ -20,6 +20,7 @@ import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 import java.awt.*
+import java.awt.datatransfer.StringSelection
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -74,6 +75,19 @@ class RemoteAdbToolWindowPanel(
     private val disconnectButton = JButton("Disconnect")
     private val helpButton = JButton("Help")
 
+    // Error details UI elements
+    private val errorSection = JPanel(BorderLayout(8, 4))
+    private val errorLabel = JTextArea().apply {
+        isEditable = false
+        lineWrap = true
+        wrapStyleWord = true
+        background = null
+        border = null
+        font = Font("Monospaced", Font.PLAIN, 12)
+        foreground = JBColor.RED
+    }
+    private val copyErrorButton = JButton("Copy Details")
+
     // Coroutine scope for state observation
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -108,6 +122,8 @@ class RemoteAdbToolWindowPanel(
         mainPanel.add(buildSettingsSection())
         mainPanel.add(Box.createVerticalStrut(12))
         mainPanel.add(buildStatusSection())
+        mainPanel.add(Box.createVerticalStrut(12))
+        mainPanel.add(buildErrorSection())
         mainPanel.add(Box.createVerticalStrut(12))
         mainPanel.add(buildDevicesSection())
         mainPanel.add(Box.createVerticalGlue())
@@ -212,6 +228,53 @@ class RemoteAdbToolWindowPanel(
         panel.add(scrollPane, BorderLayout.CENTER)
 
         return panel
+    }
+
+    private fun buildErrorSection(): JPanel {
+        errorSection.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createTitledBorder("Error Details"),
+            JBUI.Borders.empty(4)
+        )
+        errorSection.maximumSize = Dimension(Int.MAX_VALUE, 120)
+        errorSection.preferredSize = Dimension(0, 100)
+
+        val scrollPane = JBScrollPane(errorLabel).apply {
+            border = null
+        }
+        
+        val bottomPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0))
+        bottomPanel.add(copyErrorButton)
+
+        errorSection.add(scrollPane, BorderLayout.CENTER)
+        errorSection.add(bottomPanel, BorderLayout.SOUTH)
+        errorSection.isVisible = false // Hidden by default
+
+        // Bind action for copying
+        copyErrorButton.addActionListener {
+            val state = stateMachine.state.value
+            if (state is ConnectionState.Error) {
+                val fullError = buildString {
+                    appendLine("Remote ADB Connector - Error Log")
+                    appendLine("===============================")
+                    appendLine("Time: ${timeFormatter.format(stateMachine.lastTransitionTime)}")
+                    appendLine("Error: ${state.message}")
+                    state.cause?.let { cause ->
+                        appendLine("Cause: ${cause.message}")
+                        appendLine("Stack Trace:")
+                        appendLine(cause.stackTraceToString())
+                    }
+                }
+                try {
+                    val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+                    val selection = StringSelection(fullError)
+                    clipboard.setContents(selection, null)
+                } catch (e: Exception) {
+                    log.warn("Failed to copy error to clipboard", e)
+                }
+            }
+        }
+
+        return errorSection
     }
 
     private fun buildButtonPanel(): JPanel {
@@ -368,12 +431,25 @@ adb -a nodaemon server</pre>
             connectButton.isEnabled = isIdle
             disconnectButton.isEnabled = !isIdle
 
+            // Error details visibility and content
+            if (state is ConnectionState.Error) {
+                errorLabel.text = state.message
+                errorSection.isVisible = true
+            } else {
+                errorLabel.text = ""
+                errorSection.isVisible = false
+            }
+
             // Disable settings editing while connected
             val settingsEnabled = isIdle
             hostField.isEnabled = settingsEnabled
             adbPortSpinner.isEnabled = settingsEnabled
             deviceTcpPortSpinner.isEnabled = settingsEnabled
             pollingSpinner.isEnabled = settingsEnabled
+
+            // Force layout update and repaint
+            rootPanel.revalidate()
+            rootPanel.repaint()
         }
     }
 
