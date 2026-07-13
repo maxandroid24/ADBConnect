@@ -54,6 +54,10 @@ class ConnectionManager(private val project: Project) {
     fun connect(): Boolean {
         log.info("Starting connection workflow")
 
+        // Run local disconnect first to clear any stale connections
+        log.info("Running local adb disconnect")
+        adbExecutor.executeOnLocal("disconnect")
+
         // Step 1: Verify Windows ADB server
         stateMachine.transition(ConnectionState.WaitingForWindowsServer)
         if (!verifyWindowsServer()) {
@@ -138,6 +142,10 @@ class ConnectionManager(private val project: Project) {
             notifications.notifyDisconnected(device.displayName())
         }
 
+        // Clean up port forwarding on Windows PC
+        log.info("Removing port forward on Windows: tcp:5036")
+        adbExecutor.executeOnWindows("forward", "--remove", "tcp:5036")
+
         stateMachine.reset()
     }
 
@@ -200,12 +208,14 @@ class ConnectionManager(private val project: Project) {
      * @return The device with [Device.ip] and [Device.tcpPort] populated, or null on failure.
      */
     internal fun prepareDevice(device: Device): Device? {
-        val tcpPort = settings.state.deviceTcpPort
+        val windowsHost = settings.state.windowsHost.orEmpty()
+        val deviceTcpPort = 5037
+        val forwardPort = 5036
 
         // Switch to TCP mode
-        log.info("Switching ${device.serial} to TCP mode on port $tcpPort")
+        log.info("Switching ${device.serial} to TCP mode on port $deviceTcpPort")
         val tcpResult = adbExecutor.executeOnWindows(
-            "-s", device.serial, "tcpip", tcpPort.toString()
+            "-s", device.serial, "tcpip", deviceTcpPort.toString()
         )
 
         if (tcpResult.isFailure) {
@@ -213,18 +223,23 @@ class ConnectionManager(private val project: Project) {
             return null
         }
 
-        // Wait briefly for TCP mode to take effect
-        Thread.sleep(TCP_MODE_SETTLE_MS)
+        // Wait 2 seconds for TCP mode to take effect (sleep 2 as requested)
+        log.info("Sleeping 2 seconds for TCP mode to settle")
+        Thread.sleep(2000L)
 
-        // Resolve device IP address
-        val ip = resolveDeviceIp(device.serial)
-        if (ip == null) {
-            log.error("Could not determine IP address for ${device.serial}")
+        // Set up port forwarding on Windows PC
+        log.info("Setting up port forwarding on Windows: tcp:$forwardPort -> tcp:$deviceTcpPort")
+        val forwardResult = adbExecutor.executeOnWindows(
+            "-s", device.serial, "forward", "tcp:$forwardPort", "tcp:$deviceTcpPort"
+        )
+
+        if (forwardResult.isFailure) {
+            log.error("Failed to set up port forwarding on Windows: ${forwardResult.stderr}")
             return null
         }
 
-        log.info("Device ${device.serial} prepared: IP=$ip, TCP port=$tcpPort")
-        return device.copy(ip = ip, tcpPort = tcpPort)
+        log.info("Device ${device.serial} prepared: IP=$windowsHost, TCP port=$forwardPort")
+        return device.copy(ip = windowsHost, tcpPort = forwardPort)
     }
 
     /**
