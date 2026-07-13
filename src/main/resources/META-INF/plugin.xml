@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.adbconnect.plugin</id>
     <name>Remote ADB Connector</name>
-    <version>1.0.3</version>
+    <version>1.0.5</version>
 
     <vendor email="support@adbconnect.com" url="https://github.com/adbconnect/remote-adb-connector">
         ADBConnect
@@ -31,6 +31,12 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>1.0.5</h3>
+        <ul>
+            <li>Added selective per-device connection options (WiFi and USB) in the Available Devices list</li>
+            <li>Implemented dynamic port forwarding for USB mode to support multiple concurrent USB connections without conflicts</li>
+            <li>Enabled continuous Windows server background monitoring alongside local Linux connection tracking</li>
+        </ul>
         <h3>1.0.3</h3>
         <ul>
             <li>Added interactive "Help" button in the tool window showing setup commands for exposing the Windows ADB server</li>
