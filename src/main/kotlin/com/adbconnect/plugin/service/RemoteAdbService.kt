@@ -3,6 +3,7 @@ package com.adbconnect.plugin.service
 import com.adbconnect.plugin.model.ConnectionState
 import com.adbconnect.plugin.notification.NotificationService
 import com.adbconnect.plugin.settings.PluginSettings
+import com.adbconnect.plugin.settings.PluginSettingsState
 import com.adbconnect.plugin.util.IpValidator
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
@@ -271,7 +272,7 @@ class RemoteAdbService(private val project: Project) : Disposable {
             return "ADB port must be between 1 and 65535."
         }
 
-        if (!IpValidator.isValidPort(state.deviceTcpPort)) {
+        if (state.connectionType == PluginSettingsState.CONNECTION_TYPE_WIFI && !IpValidator.isValidPort(state.deviceTcpPort)) {
             return "Device TCP port must be between 1 and 65535."
         }
 
