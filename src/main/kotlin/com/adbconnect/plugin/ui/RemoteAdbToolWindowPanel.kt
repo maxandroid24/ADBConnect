@@ -53,10 +53,6 @@ class RemoteAdbToolWindowPanel(
 
     // Settings
     private val hostField = JTextField(20)
-    private val connectionTypeCombo = JComboBox(arrayOf(
-        PluginSettingsState.CONNECTION_TYPE_WIFI,
-        PluginSettingsState.CONNECTION_TYPE_USB
-    ))
     private val adbPortSpinner = JSpinner(SpinnerNumberModel(5037, 1, 65535, 1))
     private val deviceTcpPortSpinner = JSpinner(SpinnerNumberModel(5555, 1, 65535, 1))
     private val pollingSpinner = JSpinner(SpinnerNumberModel(5, 1, 300, 1))
@@ -70,9 +66,13 @@ class RemoteAdbToolWindowPanel(
     private val lastPollLabel = JBLabel("Last poll: —")
     private val deviceCountLabel = JBLabel("Devices: 0")
 
-    // Devices list
-    private val deviceListModel = DefaultListModel<String>()
-    private val deviceList = JBList(deviceListModel)
+    // Dynamic Device Panels
+    private val availableDevicesPanel = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+    }
+    private val connectedDevicesPanel = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+    }
 
     // Buttons
     private val connectButton = JButton("Connect")
@@ -129,7 +129,9 @@ class RemoteAdbToolWindowPanel(
         mainPanel.add(Box.createVerticalStrut(12))
         mainPanel.add(buildErrorSection())
         mainPanel.add(Box.createVerticalStrut(12))
-        mainPanel.add(buildDevicesSection())
+        mainPanel.add(buildAvailableDevicesSection())
+        mainPanel.add(Box.createVerticalStrut(12))
+        mainPanel.add(buildConnectedDevicesSection())
         mainPanel.add(Box.createVerticalGlue())
 
         val scrollPane = JBScrollPane(mainPanel)
@@ -158,16 +160,11 @@ class RemoteAdbToolWindowPanel(
             BorderFactory.createTitledBorder("Settings"),
             JBUI.Borders.empty(4)
         )
-        panel.maximumSize = Dimension(Int.MAX_VALUE, 295)
+        panel.maximumSize = Dimension(Int.MAX_VALUE, 260)
 
         // Windows Host
         val hostRow = createFormRow("Windows Host:", hostField)
         panel.add(hostRow)
-        panel.add(Box.createVerticalStrut(4))
-
-        // Connection Type
-        val typeRow = createFormRow("Connection Type:", connectionTypeCombo)
-        panel.add(typeRow)
         panel.add(Box.createVerticalStrut(4))
 
         // ADB Port
@@ -221,19 +218,31 @@ class RemoteAdbToolWindowPanel(
         return panel
     }
 
-    private fun buildDevicesSection(): JPanel {
+    private fun buildAvailableDevicesSection(): JPanel {
         val panel = JPanel(BorderLayout())
         panel.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createTitledBorder("Connected Devices"),
+            BorderFactory.createTitledBorder("Available Devices (Windows Server)"),
             JBUI.Borders.empty(4)
         )
         panel.maximumSize = Dimension(Int.MAX_VALUE, 200)
         panel.preferredSize = Dimension(0, 120)
 
-        deviceList.emptyText.text = "No devices connected"
-        deviceList.selectionMode = ListSelectionModel.SINGLE_SELECTION
+        val scrollPane = JBScrollPane(availableDevicesPanel)
+        panel.add(scrollPane, BorderLayout.CENTER)
 
-        val scrollPane = JBScrollPane(deviceList)
+        return panel
+    }
+
+    private fun buildConnectedDevicesSection(): JPanel {
+        val panel = JPanel(BorderLayout())
+        panel.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createTitledBorder("Connected Devices (Local Linux)"),
+            JBUI.Borders.empty(4)
+        )
+        panel.maximumSize = Dimension(Int.MAX_VALUE, 200)
+        panel.preferredSize = Dimension(0, 120)
+
+        val scrollPane = JBScrollPane(connectedDevicesPanel)
         panel.add(scrollPane, BorderLayout.CENTER)
 
         return panel
@@ -320,23 +329,17 @@ class RemoteAdbToolWindowPanel(
     private fun loadSettings() {
         val state = settings.state
         hostField.text = state.windowsHost ?: ""
-        connectionTypeCombo.selectedItem = state.connectionType ?: PluginSettingsState.CONNECTION_TYPE_WIFI
         adbPortSpinner.value = state.adbPort
         deviceTcpPortSpinner.value = state.deviceTcpPort
         pollingSpinner.value = state.pollingIntervalSeconds
         autoConnectCheckbox.isSelected = state.autoConnect
         autoDetectCheckbox.isSelected = state.autoDetectDevices
         autoReconnectCheckbox.isSelected = state.autoReconnect
-
-        // Initial enablement of TCP port spinner
-        val isUsb = state.connectionType == PluginSettingsState.CONNECTION_TYPE_USB
-        deviceTcpPortSpinner.isEnabled = !isUsb
     }
 
     private fun saveSettings() {
         val state = settings.state
         state.windowsHost = hostField.text.trim()
-        state.connectionType = connectionTypeCombo.selectedItem as String
         state.adbPort = adbPortSpinner.value as Int
         state.deviceTcpPort = deviceTcpPortSpinner.value as Int
         state.pollingIntervalSeconds = pollingSpinner.value as Int
@@ -350,11 +353,6 @@ class RemoteAdbToolWindowPanel(
     // ──────────────────────────────────────────────────────────────────────
 
     private fun bindActions() {
-        connectionTypeCombo.addActionListener {
-            val isUsb = connectionTypeCombo.selectedItem == PluginSettingsState.CONNECTION_TYPE_USB
-            deviceTcpPortSpinner.isEnabled = !isUsb
-        }
-
         connectButton.addActionListener {
             saveSettings()
             val error = remoteAdbService.connect()
@@ -412,6 +410,66 @@ adb -a nodaemon server</pre>
                 updateUI(state)
             }
         }
+        scope.launch {
+            remoteAdbService.availableDevices.collectLatest { devices ->
+                val currentConnected = extractDevices(stateMachine.state.value)
+                updateAvailableDevicesUI(devices, currentConnected)
+            }
+        }
+    }
+
+    private fun updateAvailableDevicesUI(devices: List<Device>, connectedDevices: List<Device>) {
+        ApplicationManager.getApplication().invokeLater {
+            if (project.isDisposed) return@invokeLater
+
+            availableDevicesPanel.removeAll()
+            val activeSerials = connectedDevices.map { it.serial }.toSet()
+
+            if (devices.isEmpty()) {
+                val emptyLabel = JBLabel("No devices detected on Windows server").apply {
+                    foreground = JBColor.GRAY
+                    border = JBUI.Borders.empty(8)
+                }
+                availableDevicesPanel.add(emptyLabel)
+            } else {
+                for (device in devices) {
+                    val row = JPanel(BorderLayout(8, 0)).apply {
+                        border = JBUI.Borders.empty(4, 8)
+                        maximumSize = Dimension(Int.MAX_VALUE, 32)
+                    }
+
+                    val nameLabel = JBLabel(device.displayName())
+                    row.add(nameLabel, BorderLayout.CENTER)
+
+                    val actionPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0))
+                    val isAlreadyConnected = device.serial in activeSerials
+
+                    val wifiButton = JButton("Connect WiFi").apply {
+                        toolTipText = "Connect via WiFi"
+                        isEnabled = !isAlreadyConnected && stateMachine.currentState !is ConnectionState.Error && remoteAdbService.isActive
+                        addActionListener {
+                            remoteAdbService.connectDevice(device, "WiFi")
+                        }
+                    }
+
+                    val usbButton = JButton("Connect USB").apply {
+                        toolTipText = "Connect via USB Forwarding"
+                        isEnabled = !isAlreadyConnected && stateMachine.currentState !is ConnectionState.Error && remoteAdbService.isActive
+                        addActionListener {
+                            remoteAdbService.connectDevice(device, "USB")
+                        }
+                    }
+
+                    actionPanel.add(wifiButton)
+                    actionPanel.add(usbButton)
+                    row.add(actionPanel, BorderLayout.EAST)
+
+                    availableDevicesPanel.add(row)
+                }
+            }
+            availableDevicesPanel.revalidate()
+            availableDevicesPanel.repaint()
+        }
     }
 
     private fun updateUI(state: ConnectionState) {
@@ -430,21 +488,52 @@ adb -a nodaemon server</pre>
             val lastTransition = stateMachine.lastTransitionTime
             lastPollLabel.text = "Last update: ${timeFormatter.format(lastTransition)}"
 
-            // Device count and list
+            // Connected devices list
             val devices = extractDevices(state)
             deviceCountLabel.text = "Devices: ${devices.size}"
 
-            deviceListModel.clear()
-            for (device in devices) {
-                val stateEmoji = when (device.state) {
-                    com.adbconnect.plugin.model.DeviceState.DEVICE -> "🟢"
-                    com.adbconnect.plugin.model.DeviceState.OFFLINE -> "🔴"
-                    com.adbconnect.plugin.model.DeviceState.UNAUTHORIZED -> "🟡"
-                    else -> "⚪"
+            connectedDevicesPanel.removeAll()
+            if (devices.isEmpty()) {
+                val emptyLabel = JBLabel("No devices connected").apply {
+                    foreground = JBColor.GRAY
+                    border = JBUI.Borders.empty(8)
                 }
-                val addr = device.tcpAddress?.let { " ($it)" } ?: ""
-                deviceListModel.addElement("$stateEmoji ${device.displayName()}$addr")
+                connectedDevicesPanel.add(emptyLabel)
+            } else {
+                for (device in devices) {
+                    val row = JPanel(BorderLayout(8, 0)).apply {
+                        border = JBUI.Borders.empty(4, 8)
+                        maximumSize = Dimension(Int.MAX_VALUE, 32)
+                    }
+
+                    val stateEmoji = when (device.state) {
+                        com.adbconnect.plugin.model.DeviceState.DEVICE -> "🟢"
+                        com.adbconnect.plugin.model.DeviceState.OFFLINE -> "🔴"
+                        com.adbconnect.plugin.model.DeviceState.UNAUTHORIZED -> "🟡"
+                        else -> "⚪"
+                    }
+                    val addr = device.tcpAddress?.let { " ($it)" } ?: ""
+                    val typeText = device.connectionType?.let { " [$it]" } ?: ""
+
+                    val nameLabel = JBLabel("$stateEmoji ${device.displayName()}$addr$typeText")
+                    row.add(nameLabel, BorderLayout.CENTER)
+
+                    val disconnectBtn = JButton("Disconnect").apply {
+                        addActionListener {
+                            remoteAdbService.disconnectDevice(device)
+                        }
+                    }
+                    row.add(disconnectBtn, BorderLayout.EAST)
+
+                    connectedDevicesPanel.add(row)
+                }
             }
+            connectedDevicesPanel.revalidate()
+            connectedDevicesPanel.repaint()
+
+            // Trigger sync of available devices list
+            val currentAvailable = remoteAdbService.availableDevices.value
+            updateAvailableDevicesUI(currentAvailable, devices)
 
             // Button states
             val isIdle = state is ConnectionState.Idle || state is ConnectionState.Error
@@ -463,9 +552,8 @@ adb -a nodaemon server</pre>
             // Disable settings editing while connected
             val settingsEnabled = isIdle
             hostField.isEnabled = settingsEnabled
-            connectionTypeCombo.isEnabled = settingsEnabled
             adbPortSpinner.isEnabled = settingsEnabled
-            deviceTcpPortSpinner.isEnabled = settingsEnabled && (connectionTypeCombo.selectedItem != PluginSettingsState.CONNECTION_TYPE_USB)
+            deviceTcpPortSpinner.isEnabled = settingsEnabled
             pollingSpinner.isEnabled = settingsEnabled
 
             // Force layout update and repaint

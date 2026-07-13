@@ -14,7 +14,8 @@ data class Device(
     val state: DeviceState,
     val ip: String? = null,
     val tcpPort: Int? = null,
-    val model: String? = null
+    val model: String? = null,
+    val connectionType: String? = null
 ) {
     /**
      * Returns the TCP connection address in `ip:port` format.

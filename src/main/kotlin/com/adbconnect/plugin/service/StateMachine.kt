@@ -118,10 +118,10 @@ class StateMachine(private val project: Project) {
                 to is ConnectionState.Connected
 
             is ConnectionState.Connected ->
-                to is ConnectionState.MonitoringLinux
+                to is ConnectionState.MonitoringLinux || to is ConnectionState.PreparingDevice
 
             is ConnectionState.MonitoringLinux ->
-                to is ConnectionState.Reconnecting || to is ConnectionState.Connected
+                to is ConnectionState.Reconnecting || to is ConnectionState.Connected || to is ConnectionState.PreparingDevice
 
             is ConnectionState.Reconnecting ->
                 to is ConnectionState.WaitingForWindowsDevice ||

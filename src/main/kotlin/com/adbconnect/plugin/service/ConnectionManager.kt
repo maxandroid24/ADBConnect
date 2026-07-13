@@ -52,15 +52,11 @@ class ConnectionManager(private val project: Project) {
      *
      * @return `true` if at least one device was successfully connected.
      */
-    fun connect(): Boolean {
-        log.info("Starting connection workflow")
-
-        val isUsb = settings.state.connectionType == PluginSettingsState.CONNECTION_TYPE_USB
-        if (isUsb) {
-            log.info("USB mode: running adb disconnect locally and removing any previous port forward on Windows")
-            adbExecutor.executeOnLocal("disconnect")
-            adbExecutor.executeOnWindows("forward", "--remove", "tcp:5036")
-        }
+    /**
+     * Executes the connection workflow for a specific device.
+     */
+    fun connectDevice(device: Device, type: String): Boolean {
+        log.info("Starting connection workflow for device: ${device.serial} via $type")
 
         // Step 1: Verify Windows ADB server
         stateMachine.transition(ConnectionState.WaitingForWindowsServer)
@@ -73,51 +69,111 @@ class ConnectionManager(private val project: Project) {
             return false
         }
 
-        // Step 2: Find devices on Windows
+        // Step 2: Prepare device (switch to TCP mode, set up port forward if USB)
+        stateMachine.transition(ConnectionState.PreparingDevice(device))
+        val preparedDevice = prepareDevice(device, type)
+        if (preparedDevice == null) {
+            log.warn("Failed to prepare device: ${device.serial}")
+            stateMachine.transition(ConnectionState.Error("Failed to prepare device: ${device.serial}"))
+            return false
+        }
+
+        // Step 3: Connect from Linux
+        stateMachine.transition(ConnectionState.Connecting(preparedDevice))
+        val connected = connectToLinux(preparedDevice)
+        if (connected) {
+            val currentConnected = when (val state = stateMachine.currentState) {
+                is ConnectionState.Connected -> state.devices
+                is ConnectionState.MonitoringLinux -> state.devices
+                else -> emptyList()
+            }
+            // Filter out older instances of same serial to prevent duplicate entries
+            val updatedList = currentConnected.filter { it.serial != device.serial } + preparedDevice
+            stateMachine.transition(ConnectionState.Connected(updatedList))
+            notifications.notifyConnected(preparedDevice.displayName())
+            return true
+        } else {
+            log.warn("Failed to connect device locally: ${preparedDevice.serial}")
+            notifications.notifyConnectionFailed(
+                "Could not connect to ${preparedDevice.displayName()} at ${preparedDevice.tcpAddress}"
+            )
+            stateMachine.transition(ConnectionState.Error("Failed to connect device: ${preparedDevice.serial}"))
+            return false
+        }
+    }
+
+    /**
+     * Disconnects a specific remote device and cleans up its port forward if it was USB.
+     */
+    fun disconnectDevice(device: Device) {
+        log.info("Disconnecting remote device: ${device.serial}")
+
+        val tcpAddr = device.tcpAddress
+        if (tcpAddr != null) {
+            val result = adbExecutor.executeOnLocal("disconnect", tcpAddr)
+            if (result.isSuccess) {
+                log.info("Disconnected local connection: $tcpAddr")
+            } else {
+                log.warn("Failed to disconnect $tcpAddr: ${result.stderr}")
+            }
+        }
+
+        if (device.connectionType == "USB" && device.tcpPort != null) {
+            log.info("USB mode: Removing port forward tcp:${device.tcpPort} from Windows server")
+            val result = adbExecutor.executeOnWindows("forward", "--remove", "tcp:${device.tcpPort}")
+            if (result.isSuccess) {
+                log.info("Removed port forward tcp:${device.tcpPort} successfully")
+            } else {
+                log.warn("Failed to remove port forward tcp:${device.tcpPort}: ${result.stderr}")
+            }
+        }
+
+        notifications.notifyDisconnected(device.displayName())
+
+        // Update state flow with remaining devices
+        val currentConnected = when (val state = stateMachine.currentState) {
+            is ConnectionState.Connected -> state.devices
+            is ConnectionState.MonitoringLinux -> state.devices
+            else -> emptyList()
+        }
+        val remaining = currentConnected.filter { it.serial != device.serial }
+        if (remaining.isNotEmpty()) {
+            stateMachine.transition(ConnectionState.Connected(remaining))
+        } else {
+            stateMachine.reset()
+        }
+    }
+
+    /**
+     * Retains the compatibility connection workflow to connect all devices via WiFi.
+     */
+    fun connect(): Boolean {
+        log.info("Starting legacy connection workflow")
+
+        stateMachine.transition(ConnectionState.WaitingForWindowsServer)
+        if (!verifyWindowsServer()) {
+            val host = settings.state.windowsHost.orEmpty()
+            notifications.notifyServerUnreachable(host)
+            stateMachine.transition(
+                ConnectionState.Error("Cannot reach ADB server at ${host}:${settings.state.adbPort}")
+            )
+            return false
+        }
+
         stateMachine.transition(ConnectionState.WaitingForWindowsDevice)
         val windowsDevices = findWindowsDevices()
         if (windowsDevices.isEmpty()) {
             log.info("No devices found on Windows server")
-            // Don't error — the monitor will continue polling
             return false
         }
 
-        val connectedDevices = mutableListOf<Device>()
-
+        var anyConnected = false
         for (device in windowsDevices) {
-            // Step 3: Prepare device (switch to TCP mode)
-            stateMachine.transition(ConnectionState.PreparingDevice(device))
-            val preparedDevice = prepareDevice(device)
-            if (preparedDevice == null) {
-                log.warn("Failed to prepare device: ${device.serial}")
-                continue
-            }
-
-            // Step 4: Connect from Linux
-            stateMachine.transition(ConnectionState.Connecting(preparedDevice))
-            val connected = connectToLinux(preparedDevice)
-            if (connected) {
-                connectedDevices.add(preparedDevice)
-                notifications.notifyConnected(preparedDevice.displayName())
-            } else {
-                log.warn("Failed to connect device locally: ${preparedDevice.serial}")
-                notifications.notifyConnectionFailed(
-                    "Could not connect to ${preparedDevice.displayName()} at ${preparedDevice.tcpAddress}"
-                )
+            if (connectDevice(device, "WiFi")) {
+                anyConnected = true
             }
         }
-
-        // Step 5: Finalize
-        if (connectedDevices.isNotEmpty()) {
-            stateMachine.transition(ConnectionState.Connected(connectedDevices))
-            log.info("Successfully connected ${connectedDevices.size} device(s)")
-            return true
-        } else {
-            stateMachine.transition(
-                ConnectionState.Error("Failed to connect any devices")
-            )
-            return false
-        }
+        return anyConnected
     }
 
     /**
@@ -143,34 +199,54 @@ class ConnectionManager(private val project: Project) {
                     log.warn("Failed to disconnect $tcpAddr: ${result.stderr}")
                 }
             }
-            notifications.notifyDisconnected(device.displayName())
-        }
-
-        val isUsb = settings.state.connectionType == PluginSettingsState.CONNECTION_TYPE_USB
-        if (isUsb) {
-            log.info("USB mode: Removing port forward tcp:5036 from Windows server")
-            val result = adbExecutor.executeOnWindows("forward", "--remove", "tcp:5036")
-            if (result.isSuccess) {
-                log.info("Removed port forward tcp:5036 successfully")
-            } else {
-                log.warn("Failed to remove port forward tcp:5036: ${result.stderr}")
+            if (device.connectionType == "USB" && device.tcpPort != null) {
+                adbExecutor.executeOnWindows("forward", "--remove", "tcp:${device.tcpPort}")
             }
+            notifications.notifyDisconnected(device.displayName())
         }
 
         stateMachine.reset()
     }
 
     /**
-     * Attempts to reconnect previously connected devices.
+     * Attempts to reconnect a previously connected device.
      */
-    fun reconnect(): Boolean {
-        log.info("Attempting reconnect")
+    fun reconnectDevice(device: Device): Boolean {
+        log.info("Attempting reconnect for device: ${device.serial}")
         stateMachine.transition(ConnectionState.Reconnecting)
         notifications.notifyRetrying()
 
-        // Re-run the full workflow
-        stateMachine.transition(ConnectionState.WaitingForWindowsServer)
-        return connect()
+        val type = device.connectionType ?: "WiFi"
+        return connectDevice(device, type)
+    }
+
+    /**
+     * Attempts to reconnect all previously connected devices.
+     */
+    fun reconnect(): Boolean {
+        log.info("Attempting reconnect all")
+        stateMachine.transition(ConnectionState.Reconnecting)
+        notifications.notifyRetrying()
+
+        val currentState = stateMachine.currentState
+        val devicesToReconnect = when (currentState) {
+            is ConnectionState.Connected -> currentState.devices
+            is ConnectionState.MonitoringLinux -> currentState.devices
+            else -> emptyList()
+        }
+
+        if (devicesToReconnect.isEmpty()) {
+            return connect()
+        }
+
+        var anyConnected = false
+        for (device in devicesToReconnect) {
+            val type = device.connectionType ?: "WiFi"
+            if (connectDevice(device, type)) {
+                anyConnected = true
+            }
+        }
+        return anyConnected
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -213,16 +289,46 @@ class ConnectionManager(private val project: Project) {
     }
 
     /**
+     * Finds the next available port on the Windows server starting from 5036 by running `adb forward --list`.
+     */
+    private fun findAvailableForwardPort(): Int {
+        val result = adbExecutor.executeOnWindows("forward", "--list")
+        if (result.isFailure) {
+            log.warn("Failed to list port forwards on Windows: ${result.stderr}. Falling back to 5036.")
+            return 5036
+        }
+        val usedPorts = result.stdout.lines().mapNotNull { line ->
+            val parts = line.trim().split(Regex("\\s+"))
+            if (parts.size >= 2) {
+                val localPart = parts[1] // e.g. "tcp:5036"
+                if (localPart.startsWith("tcp:")) {
+                    localPart.substringAfter("tcp:").toIntOrNull()
+                } else null
+            } else null
+        }.toSet()
+
+        var port = 5036
+        while (port in usedPorts || port == 5037) {
+            port++
+        }
+        log.info("Dynamic port allocation: allocated port $port")
+        return port
+    }
+
+    /**
      * Step 3: Switches a USB-connected device to TCP mode and resolves its IP address.
      *
      * @param device The device to prepare.
      * @return The device with [Device.ip] and [Device.tcpPort] populated, or null on failure.
      */
-    internal fun prepareDevice(device: Device): Device? {
-        val isUsb = settings.state.connectionType == PluginSettingsState.CONNECTION_TYPE_USB
+    internal fun prepareDevice(device: Device, type: String): Device? {
+        val isUsb = type == "USB"
 
         if (isUsb) {
             log.info("USB mode: Switching ${device.serial} to TCP mode on port 5037")
+            // Perform local disconnect to clean up before mapping
+            adbExecutor.executeOnLocal("disconnect")
+
             val tcpResult = adbExecutor.executeOnWindows(
                 "-s", device.serial, "tcpip", "5037"
             )
@@ -235,20 +341,21 @@ class ConnectionManager(private val project: Project) {
             // Wait 2 seconds for TCP mode to settle
             Thread.sleep(2000L)
 
-            // Setup port forward on Windows server: adb forward tcp:5036 tcp:5037
-            log.info("USB mode: Setting up port forwarding tcp:5036 -> tcp:5037 for ${device.serial}")
+            // Setup port forward on Windows server
+            val forwardPort = findAvailableForwardPort()
+            log.info("USB mode: Setting up port forwarding tcp:$forwardPort -> tcp:5037 for ${device.serial}")
             val forwardResult = adbExecutor.executeOnWindows(
-                "-s", device.serial, "forward", "tcp:5036", "tcp:5037"
+                "-s", device.serial, "forward", "tcp:$forwardPort", "tcp:5037"
             )
 
             if (forwardResult.isFailure) {
-                log.error("Failed to forward tcp:5036 to tcp:5037 for ${device.serial}: ${forwardResult.stderr}")
+                log.error("Failed to forward tcp:$forwardPort to tcp:5037 for ${device.serial}: ${forwardResult.stderr}")
                 return null
             }
 
             val windowsHost = settings.state.windowsHost.orEmpty()
-            log.info("Device ${device.serial} prepared via USB port forwarding: Host=$windowsHost, Port=5036")
-            return device.copy(ip = windowsHost, tcpPort = 5036)
+            log.info("Device ${device.serial} prepared via USB port forwarding: Host=$windowsHost, Port=$forwardPort")
+            return device.copy(ip = windowsHost, tcpPort = forwardPort, connectionType = "USB")
         } else {
             val tcpPort = settings.state.deviceTcpPort
 
@@ -274,8 +381,12 @@ class ConnectionManager(private val project: Project) {
             }
 
             log.info("Device ${device.serial} prepared: IP=$ip, TCP port=$tcpPort")
-            return device.copy(ip = ip, tcpPort = tcpPort)
+            return device.copy(ip = ip, tcpPort = tcpPort, connectionType = "WiFi")
         }
+    }
+
+    internal fun prepareDevice(device: Device): Device? {
+        return prepareDevice(device, "WiFi")
     }
 
     /**

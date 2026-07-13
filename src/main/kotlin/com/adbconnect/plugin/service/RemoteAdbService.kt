@@ -1,6 +1,7 @@
 package com.adbconnect.plugin.service
 
 import com.adbconnect.plugin.model.ConnectionState
+import com.adbconnect.plugin.model.Device
 import com.adbconnect.plugin.notification.NotificationService
 import com.adbconnect.plugin.settings.PluginSettings
 import com.adbconnect.plugin.settings.PluginSettingsState
@@ -11,6 +12,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 
 /**
  * Top-level orchestrator for the Remote ADB Connector plugin.
@@ -53,6 +55,10 @@ class RemoteAdbService(private val project: Project) : Disposable {
 
     /** Current background connection job, if any. */
     private var connectionJob: Job? = null
+
+    /** State flow of available devices on Windows. */
+    private val _availableDevices = MutableStateFlow<List<Device>>(emptyList())
+    val availableDevices: StateFlow<List<Device>> = _availableDevices.asStateFlow()
 
     /** Whether the service has been started. */
     @Volatile
@@ -124,10 +130,56 @@ class RemoteAdbService(private val project: Project) : Disposable {
         windowsMonitor.stop()
         linuxMonitor.stop()
 
+        // Clear available devices
+        _availableDevices.value = emptyList()
+
         // Disconnect devices
         connectionManager.disconnect()
 
         log.info("Disconnected and cleaned up")
+    }
+
+    /**
+     * Initiates connection for a specific device.
+     */
+    fun connectDevice(device: Device, type: String) {
+        if (!isActive) {
+            isActive = true
+            notifications.clearThrottleCache()
+        }
+        scope.launch {
+            try {
+                val success = withContext(Dispatchers.IO) {
+                    connectionManager.connectDevice(device, type)
+                }
+                if (success) {
+                    // Restart/update Linux monitoring
+                    startLinuxMonitoring()
+                }
+            } catch (e: Exception) {
+                log.error("Failed to connect device: ${device.serial}", e)
+                stateMachine.transition(
+                    ConnectionState.Error("Failed to connect: ${e.message}", e)
+                )
+            }
+        }
+    }
+
+    /**
+     * Initiates disconnection for a specific device.
+     */
+    fun disconnectDevice(device: Device) {
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    connectionManager.disconnectDevice(device)
+                }
+                // Restart/update Linux monitoring
+                startLinuxMonitoring()
+            } catch (e: Exception) {
+                log.error("Failed to disconnect device: ${device.serial}", e)
+            }
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -138,31 +190,15 @@ class RemoteAdbService(private val project: Project) : Disposable {
      * The main connection workflow executed in a background coroutine.
      */
     private suspend fun executeConnectionWorkflow() {
-        log.info("Executing connection workflow")
-
-        // Attempt initial connection
-        val connected = withContext(Dispatchers.IO) {
-            connectionManager.connect()
-        }
-
-        if (connected) {
-            // Connection succeeded — start Linux monitoring
-            startLinuxMonitoring()
-        } else {
-            // Connection failed — start Windows monitoring to wait for devices
-            if (isActive && settings.state.autoDetectDevices) {
-                startWindowsMonitoring()
-            }
-        }
+        log.info("Executing connection workflow - starting Windows monitoring")
+        startWindowsMonitoring()
     }
 
     /**
      * Starts monitoring the Windows ADB server for device changes.
-     * When devices appear, automatically attempts connection.
      */
     private fun startWindowsMonitoring() {
         log.info("Starting Windows device monitoring")
-        linuxMonitor.stop()
 
         windowsMonitor.start(
             onDevicesChanged = { devices ->
@@ -172,25 +208,7 @@ class RemoteAdbService(private val project: Project) : Disposable {
                     it.state == com.adbconnect.plugin.model.DeviceState.DEVICE
                 }
 
-                if (readyDevices.isNotEmpty()) {
-                    log.info("Devices found on Windows — attempting connection")
-                    readyDevices.forEach { notifications.notifyNewDevice(it.displayName()) }
-
-                    // Stop Windows monitoring and attempt connection
-                    windowsMonitor.stop()
-
-                    connectionJob = scope.launch {
-                        val success = withContext(Dispatchers.IO) {
-                            connectionManager.connect()
-                        }
-                        if (success) {
-                            startLinuxMonitoring()
-                        } else if (isActive && settings.state.autoDetectDevices) {
-                            // Resume Windows monitoring
-                            startWindowsMonitoring()
-                        }
-                    }
-                }
+                _availableDevices.value = readyDevices
             },
             onError = { error ->
                 log.warn("Windows monitor error: $error")
@@ -200,7 +218,6 @@ class RemoteAdbService(private val project: Project) : Disposable {
 
     /**
      * Starts monitoring the local Linux ADB server for device presence.
-     * If devices are lost, attempts reconnection.
      */
     private fun startLinuxMonitoring() {
         val currentState = stateMachine.currentState
@@ -212,33 +229,28 @@ class RemoteAdbService(private val project: Project) : Disposable {
 
         stateMachine.transition(ConnectionState.MonitoringLinux(devices))
 
-        windowsMonitor.stop()
+        // Keep Windows monitor running in the background so list stays updated
 
         linuxMonitor.start(
             devices = devices,
             onDeviceLost = { lostDevice ->
                 log.warn("Device lost: ${lostDevice.serial}")
                 notifications.notifyDeviceLost(lostDevice.displayName())
+                if (settings.state.autoReconnect && isActive) {
+                    log.info("Attempting auto-reconnect for ${lostDevice.serial}")
+                    scope.launch {
+                        connectionManager.reconnectDevice(lostDevice)
+                        startLinuxMonitoring()
+                    }
+                }
             },
             onAllDevicesLost = {
                 if (!isActive) return@start
 
-                log.warn("All devices lost — initiating reconnect")
+                log.warn("All devices lost")
                 linuxMonitor.stop()
 
-                if (settings.state.autoReconnect) {
-                    connectionJob = scope.launch {
-                        val success = withContext(Dispatchers.IO) {
-                            connectionManager.reconnect()
-                        }
-                        if (success) {
-                            startLinuxMonitoring()
-                        } else if (isActive) {
-                            // Fall back to Windows monitoring
-                            startWindowsMonitoring()
-                        }
-                    }
-                } else {
+                if (!settings.state.autoReconnect) {
                     stateMachine.transition(
                         ConnectionState.Error("All devices lost. Auto-reconnect is disabled.")
                     )
