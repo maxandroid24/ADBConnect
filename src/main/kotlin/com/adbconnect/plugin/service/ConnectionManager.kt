@@ -58,8 +58,20 @@ class ConnectionManager(private val project: Project) {
     fun connectDevice(device: Device, type: String): Boolean {
         log.info("Starting connection workflow for device: ${device.serial} via $type")
 
+        // Capture currently connected devices before transitioning state
+        val currentlyConnected = when (val state = stateMachine.currentState) {
+            is ConnectionState.Connected -> state.devices
+            is ConnectionState.MonitoringLinux -> state.devices
+            is ConnectionState.PreparingDevice -> state.connectedDevices
+            is ConnectionState.Connecting -> state.connectedDevices
+            else -> emptyList()
+        }
+
         // Step 1: Verify Windows ADB server
-        stateMachine.transition(ConnectionState.WaitingForWindowsServer)
+        // Only transition to WaitingForWindowsServer if we are in Idle or Error state to avoid clearing UI
+        if (stateMachine.currentState is ConnectionState.Idle || stateMachine.currentState is ConnectionState.Error) {
+            stateMachine.transition(ConnectionState.WaitingForWindowsServer)
+        }
         if (!verifyWindowsServer()) {
             val host = settings.state.windowsHost.orEmpty()
             notifications.notifyServerUnreachable(host)
@@ -70,25 +82,24 @@ class ConnectionManager(private val project: Project) {
         }
 
         // Step 2: Prepare device (switch to TCP mode, set up port forward if USB)
-        stateMachine.transition(ConnectionState.PreparingDevice(device))
+        stateMachine.transition(ConnectionState.PreparingDevice(device, currentlyConnected))
         val preparedDevice = prepareDevice(device, type)
         if (preparedDevice == null) {
             log.warn("Failed to prepare device: ${device.serial}")
-            stateMachine.transition(ConnectionState.Error("Failed to prepare device: ${device.serial}"))
+            if (currentlyConnected.isNotEmpty()) {
+                stateMachine.transition(ConnectionState.Connected(currentlyConnected))
+            } else {
+                stateMachine.transition(ConnectionState.Error("Failed to prepare device: ${device.serial}"))
+            }
             return false
         }
 
         // Step 3: Connect from Linux
-        stateMachine.transition(ConnectionState.Connecting(preparedDevice))
+        stateMachine.transition(ConnectionState.Connecting(preparedDevice, currentlyConnected))
         val connected = connectToLinux(preparedDevice)
         if (connected) {
-            val currentConnected = when (val state = stateMachine.currentState) {
-                is ConnectionState.Connected -> state.devices
-                is ConnectionState.MonitoringLinux -> state.devices
-                else -> emptyList()
-            }
             // Filter out older instances of same serial to prevent duplicate entries
-            val updatedList = currentConnected.filter { it.serial != device.serial } + preparedDevice
+            val updatedList = currentlyConnected.filter { it.serial != device.serial } + preparedDevice
             stateMachine.transition(ConnectionState.Connected(updatedList))
             notifications.notifyConnected(preparedDevice.displayName())
             return true
@@ -97,7 +108,11 @@ class ConnectionManager(private val project: Project) {
             notifications.notifyConnectionFailed(
                 "Could not connect to ${preparedDevice.displayName()} at ${preparedDevice.tcpAddress}"
             )
-            stateMachine.transition(ConnectionState.Error("Failed to connect device: ${preparedDevice.serial}"))
+            if (currentlyConnected.isNotEmpty()) {
+                stateMachine.transition(ConnectionState.Connected(currentlyConnected))
+            } else {
+                stateMachine.transition(ConnectionState.Error("Failed to connect device: ${preparedDevice.serial}"))
+            }
             return false
         }
     }
@@ -213,7 +228,15 @@ class ConnectionManager(private val project: Project) {
      */
     fun reconnectDevice(device: Device): Boolean {
         log.info("Attempting reconnect for device: ${device.serial}")
-        stateMachine.transition(ConnectionState.Reconnecting)
+        val currentState = stateMachine.currentState
+        val hasOtherDevices = when (currentState) {
+            is ConnectionState.Connected -> currentState.devices.any { it.serial != device.serial }
+            is ConnectionState.MonitoringLinux -> currentState.devices.any { it.serial != device.serial }
+            else -> false
+        }
+        if (!hasOtherDevices) {
+            stateMachine.transition(ConnectionState.Reconnecting)
+        }
         notifications.notifyRetrying()
 
         val type = device.connectionType ?: "WiFi"

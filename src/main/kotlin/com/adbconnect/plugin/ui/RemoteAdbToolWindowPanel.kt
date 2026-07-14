@@ -60,11 +60,16 @@ class RemoteAdbToolWindowPanel(
     private val autoDetectCheckbox = JCheckBox("Auto Detect Devices")
     private val autoReconnectCheckbox = JCheckBox("Auto Reconnect")
 
+    private val settingsTitleLabel = JBLabel("▶ Settings").apply {
+        font = font.deriveFont(Font.BOLD, 12f)
+        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+    }
+    private val settingsContentPanel = JPanel()
+    private var isSettingsExpanded = false
+
     // Status
     private val statusIndicatorLabel = JBLabel("⚪ Idle")
-    private val hostStatusLabel = JBLabel("Host: —")
-    private val lastPollLabel = JBLabel("Last poll: —")
-    private val deviceCountLabel = JBLabel("Devices: 0")
+    private val lastPollLabel = JBLabel("Last update: —")
 
     // Dynamic Device Panels
     private val availableDevicesPanel = JPanel().apply {
@@ -73,6 +78,7 @@ class RemoteAdbToolWindowPanel(
     private val connectedDevicesPanel = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
     }
+    private val devicesTabbedPane = JTabbedPane()
 
     // Buttons
     private val connectButton = JButton("Connect")
@@ -116,22 +122,18 @@ class RemoteAdbToolWindowPanel(
     // ──────────────────────────────────────────────────────────────────────
 
     private fun buildUI() {
-        rootPanel.border = JBUI.Borders.empty(8)
+        rootPanel.border = JBUI.Borders.empty(6)
 
         val mainPanel = JPanel()
         mainPanel.layout = BoxLayout(mainPanel, BoxLayout.Y_AXIS)
 
         mainPanel.add(buildHeaderSection())
-        mainPanel.add(Box.createVerticalStrut(12))
+        mainPanel.add(Box.createVerticalStrut(8))
         mainPanel.add(buildSettingsSection())
-        mainPanel.add(Box.createVerticalStrut(12))
-        mainPanel.add(buildStatusSection())
-        mainPanel.add(Box.createVerticalStrut(12))
+        mainPanel.add(Box.createVerticalStrut(8))
         mainPanel.add(buildErrorSection())
-        mainPanel.add(Box.createVerticalStrut(12))
-        mainPanel.add(buildAvailableDevicesSection())
-        mainPanel.add(Box.createVerticalStrut(12))
-        mainPanel.add(buildConnectedDevicesSection())
+        mainPanel.add(Box.createVerticalStrut(8))
+        mainPanel.add(buildDevicesTabbedPane())
         mainPanel.add(Box.createVerticalGlue())
 
         val scrollPane = JBScrollPane(mainPanel)
@@ -142,110 +144,141 @@ class RemoteAdbToolWindowPanel(
     }
 
     private fun buildHeaderSection(): JPanel {
-        val panel = JPanel(BorderLayout())
-        panel.maximumSize = Dimension(Int.MAX_VALUE, 40)
+        val panel = JPanel(BorderLayout(8, 0)).apply {
+            maximumSize = Dimension(Int.MAX_VALUE, 30)
+            border = JBUI.Borders.empty(2, 4)
+        }
 
-        val title = JBLabel("Remote ADB Connector")
-        title.font = title.font.deriveFont(Font.BOLD, 16f)
-        title.border = JBUI.Borders.emptyBottom(4)
-        panel.add(title, BorderLayout.WEST)
+        statusIndicatorLabel.font = statusIndicatorLabel.font.deriveFont(Font.BOLD, 14f)
+        lastPollLabel.font = lastPollLabel.font.deriveFont(11f)
+        lastPollLabel.foreground = JBColor.GRAY
+
+        panel.add(statusIndicatorLabel, BorderLayout.WEST)
+        panel.add(lastPollLabel, BorderLayout.EAST)
 
         return panel
     }
 
     private fun buildSettingsSection(): JPanel {
-        val panel = JPanel()
-        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
-        panel.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createTitledBorder("Settings"),
-            JBUI.Borders.empty(4)
+        val panel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        }
+
+        val headerPanel = JPanel(BorderLayout()).apply {
+            maximumSize = Dimension(Int.MAX_VALUE, 24)
+            border = JBUI.Borders.empty(4, 4)
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        }
+        headerPanel.add(settingsTitleLabel, BorderLayout.WEST)
+
+        settingsContentPanel.layout = BoxLayout(settingsContentPanel, BoxLayout.Y_AXIS)
+        settingsContentPanel.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, JBColor.border()),
+            JBUI.Borders.empty(6, 4, 10, 4)
         )
-        panel.maximumSize = Dimension(Int.MAX_VALUE, 260)
 
-        // Windows Host
-        val hostRow = createFormRow("Windows Host:", hostField)
-        panel.add(hostRow)
-        panel.add(Box.createVerticalStrut(4))
+        val formPanel = JPanel(GridBagLayout())
+        val gbc = GridBagConstraints().apply {
+            fill = GridBagConstraints.HORIZONTAL
+            insets = JBUI.insets(3, 4)
+        }
 
-        // ADB Port
-        val portRow = createFormRow("ADB Port:", adbPortSpinner)
-        panel.add(portRow)
-        panel.add(Box.createVerticalStrut(4))
+        // Row 0: Host and Port
+        gbc.gridy = 0
+        
+        gbc.gridx = 0
+        gbc.weightx = 0.0
+        formPanel.add(JBLabel("Host:"), gbc)
+        
+        gbc.gridx = 1
+        gbc.weightx = 1.0
+        formPanel.add(hostField, gbc)
+        
+        gbc.gridx = 2
+        gbc.weightx = 0.0
+        formPanel.add(JBLabel("Port:"), gbc)
+        
+        gbc.gridx = 3
+        gbc.weightx = 0.0
+        adbPortSpinner.preferredSize = Dimension(70, adbPortSpinner.preferredSize.height)
+        formPanel.add(adbPortSpinner, gbc)
 
-        // Device TCP Port
-        val tcpRow = createFormRow("Device TCP Port:", deviceTcpPortSpinner)
-        panel.add(tcpRow)
-        panel.add(Box.createVerticalStrut(4))
+        // Row 1: TCP Port and Poll Interval
+        gbc.gridy = 1
+        
+        gbc.gridx = 0
+        gbc.weightx = 0.0
+        formPanel.add(JBLabel("TCP Port:"), gbc)
+        
+        gbc.gridx = 1
+        gbc.weightx = 1.0
+        gbc.fill = GridBagConstraints.NONE
+        gbc.anchor = GridBagConstraints.WEST
+        deviceTcpPortSpinner.preferredSize = Dimension(80, deviceTcpPortSpinner.preferredSize.height)
+        formPanel.add(deviceTcpPortSpinner, gbc)
+        
+        gbc.gridx = 2
+        gbc.weightx = 0.0
+        gbc.fill = GridBagConstraints.HORIZONTAL
+        gbc.anchor = GridBagConstraints.CENTER
+        formPanel.add(JBLabel("Poll (s):"), gbc)
+        
+        gbc.gridx = 3
+        gbc.weightx = 0.0
+        gbc.fill = GridBagConstraints.NONE
+        gbc.anchor = GridBagConstraints.WEST
+        pollingSpinner.preferredSize = Dimension(70, pollingSpinner.preferredSize.height)
+        formPanel.add(pollingSpinner, gbc)
 
-        // Polling Interval
-        val pollRow = createFormRow("Polling Interval (s):", pollingSpinner)
-        panel.add(pollRow)
-        panel.add(Box.createVerticalStrut(8))
+        settingsContentPanel.add(formPanel)
+        settingsContentPanel.add(Box.createVerticalStrut(6))
 
-        // Checkboxes
-        val checkboxPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0))
-        checkboxPanel.maximumSize = Dimension(Int.MAX_VALUE, 80)
-        val checkboxColumn = JPanel()
-        checkboxColumn.layout = BoxLayout(checkboxColumn, BoxLayout.Y_AXIS)
-        checkboxColumn.add(autoConnectCheckbox)
-        checkboxColumn.add(autoDetectCheckbox)
-        checkboxColumn.add(autoReconnectCheckbox)
-        checkboxPanel.add(checkboxColumn)
-        panel.add(checkboxPanel)
+        val checkboxPanel = JPanel(GridLayout(0, 1, 0, 2)).apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        checkboxPanel.add(autoConnectCheckbox)
+        checkboxPanel.add(autoDetectCheckbox)
+        checkboxPanel.add(autoReconnectCheckbox)
+
+        settingsContentPanel.add(checkboxPanel)
+
+        panel.add(headerPanel)
+        panel.add(settingsContentPanel)
+
+        val toggleAction = {
+            isSettingsExpanded = !isSettingsExpanded
+            settingsTitleLabel.text = if (isSettingsExpanded) "▼ Settings" else "▶ Settings"
+            settingsContentPanel.isVisible = isSettingsExpanded
+            rootPanel.revalidate()
+            rootPanel.repaint()
+        }
+
+        headerPanel.addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                toggleAction()
+            }
+        })
 
         return panel
     }
 
-    private fun buildStatusSection(): JPanel {
-        val panel = JPanel()
-        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
-        panel.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createTitledBorder("Status"),
-            JBUI.Borders.empty(4)
-        )
-        panel.maximumSize = Dimension(Int.MAX_VALUE, 120)
+    private fun buildDevicesTabbedPane(): JComponent {
+        val availableScroll = JBScrollPane(availableDevicesPanel).apply {
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+            border = BorderFactory.createEmptyBorder()
+        }
+        val connectedScroll = JBScrollPane(connectedDevicesPanel).apply {
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+            border = BorderFactory.createEmptyBorder()
+        }
 
-        statusIndicatorLabel.font = statusIndicatorLabel.font.deriveFont(Font.BOLD, 14f)
+        devicesTabbedPane.addTab("Available (0)", availableScroll)
+        devicesTabbedPane.addTab("Connected (0)", connectedScroll)
 
-        panel.add(statusIndicatorLabel)
-        panel.add(Box.createVerticalStrut(4))
-        panel.add(hostStatusLabel)
-        panel.add(Box.createVerticalStrut(2))
-        panel.add(lastPollLabel)
-        panel.add(Box.createVerticalStrut(2))
-        panel.add(deviceCountLabel)
+        devicesTabbedPane.preferredSize = Dimension(0, 180)
+        devicesTabbedPane.minimumSize = Dimension(0, 100)
 
-        return panel
-    }
-
-    private fun buildAvailableDevicesSection(): JPanel {
-        val panel = JPanel(BorderLayout())
-        panel.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createTitledBorder("Available Devices (Windows Server)"),
-            JBUI.Borders.empty(4)
-        )
-        panel.maximumSize = Dimension(Int.MAX_VALUE, 200)
-        panel.preferredSize = Dimension(0, 120)
-
-        val scrollPane = JBScrollPane(availableDevicesPanel)
-        panel.add(scrollPane, BorderLayout.CENTER)
-
-        return panel
-    }
-
-    private fun buildConnectedDevicesSection(): JPanel {
-        val panel = JPanel(BorderLayout())
-        panel.border = BorderFactory.createCompoundBorder(
-            BorderFactory.createTitledBorder("Connected Devices (Local Linux)"),
-            JBUI.Borders.empty(4)
-        )
-        panel.maximumSize = Dimension(Int.MAX_VALUE, 200)
-        panel.preferredSize = Dimension(0, 120)
-
-        val scrollPane = JBScrollPane(connectedDevicesPanel)
-        panel.add(scrollPane, BorderLayout.CENTER)
-
-        return panel
+        return devicesTabbedPane
     }
 
     private fun buildErrorSection(): JPanel {
@@ -296,30 +329,18 @@ class RemoteAdbToolWindowPanel(
     }
 
     private fun buildButtonPanel(): JPanel {
-        val panel = JPanel(FlowLayout(FlowLayout.CENTER, 6, 8))
+        val panel = JPanel(FlowLayout(FlowLayout.CENTER, 6, 6))
 
-        connectButton.preferredSize = Dimension(90, 32)
-        disconnectButton.preferredSize = Dimension(90, 32)
+        connectButton.preferredSize = Dimension(90, 28)
+        disconnectButton.preferredSize = Dimension(90, 28)
         disconnectButton.isEnabled = false
-        helpButton.preferredSize = Dimension(70, 32)
+        helpButton.preferredSize = Dimension(70, 28)
 
         panel.add(connectButton)
         panel.add(disconnectButton)
         panel.add(helpButton)
 
         return panel
-    }
-
-    private fun createFormRow(label: String, component: JComponent): JPanel {
-        val row = JPanel(BorderLayout(8, 0))
-        row.maximumSize = Dimension(Int.MAX_VALUE, 30)
-
-        val jbLabel = JBLabel(label)
-        jbLabel.preferredSize = Dimension(130, 24)
-        row.add(jbLabel, BorderLayout.WEST)
-        row.add(component, BorderLayout.CENTER)
-
-        return row
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -335,6 +356,11 @@ class RemoteAdbToolWindowPanel(
         autoConnectCheckbox.isSelected = state.autoConnect
         autoDetectCheckbox.isSelected = state.autoDetectDevices
         autoReconnectCheckbox.isSelected = state.autoReconnect
+
+        // Collapsed by default if host is already configured, otherwise expanded
+        isSettingsExpanded = hostField.text.isBlank()
+        settingsContentPanel.isVisible = isSettingsExpanded
+        settingsTitleLabel.text = if (isSettingsExpanded) "▼ Settings" else "▶ Settings"
     }
 
     private fun saveSettings() {
@@ -425,6 +451,11 @@ adb -a nodaemon server</pre>
             availableDevicesPanel.removeAll()
             val activeSerials = connectedDevices.map { it.serial }.toSet()
 
+            // Update tab title with count
+            if (devicesTabbedPane.tabCount > 0) {
+                devicesTabbedPane.setTitleAt(0, "Available (${devices.size})")
+            }
+
             if (devices.isEmpty()) {
                 val emptyLabel = JBLabel("No devices detected on Windows server").apply {
                     foreground = JBColor.GRAY
@@ -435,7 +466,6 @@ adb -a nodaemon server</pre>
                 for (device in devices) {
                     val row = JPanel(BorderLayout(8, 0)).apply {
                         border = JBUI.Borders.empty(4, 8)
-                        maximumSize = Dimension(Int.MAX_VALUE, 32)
                     }
 
                     val nameLabel = JBLabel(device.displayName())
@@ -444,7 +474,7 @@ adb -a nodaemon server</pre>
                     val actionPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0))
                     val isAlreadyConnected = device.serial in activeSerials
 
-                    val wifiButton = JButton("Connect WiFi").apply {
+                    val wifiButton = JButton("WiFi").apply {
                         toolTipText = "Connect via WiFi"
                         isEnabled = !isAlreadyConnected && stateMachine.currentState !is ConnectionState.Error && remoteAdbService.isActive
                         addActionListener {
@@ -452,7 +482,7 @@ adb -a nodaemon server</pre>
                         }
                     }
 
-                    val usbButton = JButton("Connect USB").apply {
+                    val usbButton = JButton("USB").apply {
                         toolTipText = "Connect via USB Forwarding"
                         isEnabled = !isAlreadyConnected && stateMachine.currentState !is ConnectionState.Error && remoteAdbService.isActive
                         addActionListener {
@@ -464,9 +494,11 @@ adb -a nodaemon server</pre>
                     actionPanel.add(usbButton)
                     row.add(actionPanel, BorderLayout.EAST)
 
+                    row.maximumSize = Dimension(Int.MAX_VALUE, row.preferredSize.height)
                     availableDevicesPanel.add(row)
                 }
             }
+            availableDevicesPanel.add(Box.createVerticalGlue())
             availableDevicesPanel.revalidate()
             availableDevicesPanel.repaint()
         }
@@ -476,13 +508,11 @@ adb -a nodaemon server</pre>
         ApplicationManager.getApplication().invokeLater {
             if (project.isDisposed) return@invokeLater
 
-            // Status indicator
-            statusIndicatorLabel.text = "${state.statusIndicator()} ${state.displayName()}"
-            statusIndicatorLabel.foreground = getStateColor(state)
-
-            // Host status
+            // Status indicator with host info
             val host = settings.state.windowsHost
-            hostStatusLabel.text = if (host.isNullOrBlank()) "Host: —" else "Host: $host"
+            val hostInfo = if (state !is ConnectionState.Idle && !host.isNullOrBlank()) " ($host)" else ""
+            statusIndicatorLabel.text = "${state.statusIndicator()} ${state.displayName()}$hostInfo"
+            statusIndicatorLabel.foreground = getStateColor(state)
 
             // Last poll time
             val lastTransition = stateMachine.lastTransitionTime
@@ -490,7 +520,9 @@ adb -a nodaemon server</pre>
 
             // Connected devices list
             val devices = extractDevices(state)
-            deviceCountLabel.text = "Devices: ${devices.size}"
+            if (devicesTabbedPane.tabCount > 1) {
+                devicesTabbedPane.setTitleAt(1, "Connected (${devices.size})")
+            }
 
             connectedDevicesPanel.removeAll()
             if (devices.isEmpty()) {
@@ -503,7 +535,6 @@ adb -a nodaemon server</pre>
                 for (device in devices) {
                     val row = JPanel(BorderLayout(8, 0)).apply {
                         border = JBUI.Borders.empty(4, 8)
-                        maximumSize = Dimension(Int.MAX_VALUE, 32)
                     }
 
                     val stateEmoji = when (device.state) {
@@ -525,9 +556,11 @@ adb -a nodaemon server</pre>
                     }
                     row.add(disconnectBtn, BorderLayout.EAST)
 
+                    row.maximumSize = Dimension(Int.MAX_VALUE, row.preferredSize.height)
                     connectedDevicesPanel.add(row)
                 }
             }
+            connectedDevicesPanel.add(Box.createVerticalGlue())
             connectedDevicesPanel.revalidate()
             connectedDevicesPanel.repaint()
 
@@ -563,8 +596,8 @@ adb -a nodaemon server</pre>
     }
 
     private fun extractDevices(state: ConnectionState): List<Device> = when (state) {
-        is ConnectionState.PreparingDevice -> listOf(state.device)
-        is ConnectionState.Connecting -> listOf(state.device)
+        is ConnectionState.PreparingDevice -> state.connectedDevices + state.device
+        is ConnectionState.Connecting -> state.connectedDevices + state.device
         is ConnectionState.Connected -> state.devices
         is ConnectionState.MonitoringLinux -> state.devices
         else -> emptyList()

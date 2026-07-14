@@ -24,10 +24,10 @@ sealed class ConnectionState {
     data object WaitingForWindowsDevice : ConnectionState()
 
     /** A device was found on Windows; switching it to TCP mode. */
-    data class PreparingDevice(val device: Device) : ConnectionState()
+    data class PreparingDevice(val device: Device, val connectedDevices: List<Device> = emptyList()) : ConnectionState()
 
     /** Device prepared; connecting from local Linux ADB server. */
-    data class Connecting(val device: Device) : ConnectionState()
+    data class Connecting(val device: Device, val connectedDevices: List<Device> = emptyList()) : ConnectionState()
 
     /** Successfully connected — device is available locally. */
     data class Connected(val devices: List<Device>) : ConnectionState()
