@@ -53,9 +53,21 @@ class RemoteAdbToolWindowPanel(
 
     // Settings
     private val hostField = JTextField(20)
-    private val adbPortSpinner = JSpinner(SpinnerNumberModel(5037, 1, 65535, 1))
-    private val deviceTcpPortSpinner = JSpinner(SpinnerNumberModel(5555, 1, 65535, 1))
-    private val pollingSpinner = JSpinner(SpinnerNumberModel(5, 1, 300, 1))
+    private val adbPortSpinner = JSpinner(SpinnerNumberModel(5037, 1, 65535, 1)).apply {
+        editor = JSpinner.NumberEditor(this, "#").apply {
+            textField.columns = 5
+        }
+    }
+    private val deviceTcpPortSpinner = JSpinner(SpinnerNumberModel(5555, 1, 65535, 1)).apply {
+        editor = JSpinner.NumberEditor(this, "#").apply {
+            textField.columns = 5
+        }
+    }
+    private val pollingSpinner = JSpinner(SpinnerNumberModel(5, 1, 300, 1)).apply {
+        editor = JSpinner.NumberEditor(this, "#").apply {
+            textField.columns = 3
+        }
+    }
     private val autoConnectCheckbox = JCheckBox("Auto Connect on Startup")
     private val autoDetectCheckbox = JCheckBox("Auto Detect Devices")
     private val autoReconnectCheckbox = JCheckBox("Auto Reconnect")
@@ -147,6 +159,7 @@ class RemoteAdbToolWindowPanel(
         val panel = JPanel(BorderLayout(8, 0)).apply {
             maximumSize = Dimension(Int.MAX_VALUE, 30)
             border = JBUI.Borders.empty(2, 4)
+            alignmentX = Component.LEFT_ALIGNMENT
         }
 
         statusIndicatorLabel.font = statusIndicatorLabel.font.deriveFont(Font.BOLD, 14f)
@@ -162,12 +175,14 @@ class RemoteAdbToolWindowPanel(
     private fun buildSettingsSection(): JPanel {
         val panel = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            alignmentX = Component.LEFT_ALIGNMENT
         }
 
         val headerPanel = JPanel(BorderLayout()).apply {
             maximumSize = Dimension(Int.MAX_VALUE, 24)
             border = JBUI.Borders.empty(4, 4)
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            alignmentX = Component.LEFT_ALIGNMENT
         }
         headerPanel.add(settingsTitleLabel, BorderLayout.WEST)
 
@@ -176,8 +191,11 @@ class RemoteAdbToolWindowPanel(
             BorderFactory.createMatteBorder(0, 0, 1, 0, JBColor.border()),
             JBUI.Borders.empty(6, 4, 10, 4)
         )
+        settingsContentPanel.alignmentX = Component.LEFT_ALIGNMENT
 
-        val formPanel = JPanel(GridBagLayout())
+        val formPanel = JPanel(GridBagLayout()).apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
         val gbc = GridBagConstraints().apply {
             fill = GridBagConstraints.HORIZONTAL
             insets = JBUI.insets(3, 4)
@@ -200,7 +218,6 @@ class RemoteAdbToolWindowPanel(
         
         gbc.gridx = 3
         gbc.weightx = 0.0
-        adbPortSpinner.preferredSize = Dimension(70, adbPortSpinner.preferredSize.height)
         formPanel.add(adbPortSpinner, gbc)
 
         // Row 1: TCP Port and Poll Interval
@@ -214,7 +231,6 @@ class RemoteAdbToolWindowPanel(
         gbc.weightx = 1.0
         gbc.fill = GridBagConstraints.NONE
         gbc.anchor = GridBagConstraints.WEST
-        deviceTcpPortSpinner.preferredSize = Dimension(80, deviceTcpPortSpinner.preferredSize.height)
         formPanel.add(deviceTcpPortSpinner, gbc)
         
         gbc.gridx = 2
@@ -227,7 +243,6 @@ class RemoteAdbToolWindowPanel(
         gbc.weightx = 0.0
         gbc.fill = GridBagConstraints.NONE
         gbc.anchor = GridBagConstraints.WEST
-        pollingSpinner.preferredSize = Dimension(70, pollingSpinner.preferredSize.height)
         formPanel.add(pollingSpinner, gbc)
 
         settingsContentPanel.add(formPanel)
@@ -235,6 +250,7 @@ class RemoteAdbToolWindowPanel(
 
         val checkboxPanel = JPanel(GridLayout(0, 1, 0, 2)).apply {
             alignmentX = Component.LEFT_ALIGNMENT
+            border = JBUI.Borders.emptyLeft(4)
         }
         checkboxPanel.add(autoConnectCheckbox)
         checkboxPanel.add(autoDetectCheckbox)
@@ -277,11 +293,13 @@ class RemoteAdbToolWindowPanel(
 
         devicesTabbedPane.preferredSize = Dimension(0, 180)
         devicesTabbedPane.minimumSize = Dimension(0, 100)
+        devicesTabbedPane.alignmentX = Component.LEFT_ALIGNMENT
 
         return devicesTabbedPane
     }
 
     private fun buildErrorSection(): JPanel {
+        errorSection.alignmentX = Component.LEFT_ALIGNMENT
         errorSection.border = BorderFactory.createCompoundBorder(
             BorderFactory.createTitledBorder("Error Details"),
             JBUI.Borders.empty(4)
